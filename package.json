@@ -1,0 +1,42 @@
+{
+  "name": "hostel-360",
+  "version": "1.0.0",
+  "description": "Rule-Driven, Zero-Cost, Transparent Hostel Allocation & Lifecycle Management ERP for Universities",
+  "main": "Code.gs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SumitInTech/Hostel360.git"
+  },
+  "keywords": [
+    "google-apps-script",
+    "hostel-management",
+    "smart-india-hackathon",
+    "erp",
+    "higher-education",
+    "fair-allocation",
+    "clasp",
+    "zero-cost"
+  ],
+  "author": "Sumit Kumar (https://github.com/SumitInTech)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/SumitInTech/Hostel360/issues"
+  },
+  "homepage": "https://github.com/SumitInTech/Hostel360#readme",
+  "scripts": {
+    "login": "clasp login",
+    "clone": "clasp clone",
+    "pull": "clasp pull",
+    "push": "clasp push",
+    "open": "clasp open",
+    "deploy": "clasp deploy",
+    "status": "clasp status",
+    "lint": "eslint \"*.gs\" --fix"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.83",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5"
+  }
+}
