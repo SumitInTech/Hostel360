@@ -1,0 +1,842 @@
+<div id="view-warden-dashboard" class="view-container" style="display:none;">
+
+  <!-- Header & Executive Actions Bar -->
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:20px;">
+    <div>
+      <h2 style="font-size:24px; font-weight:800; color:var(--text-main);">Warden Administration Console</h2>
+      <p style="font-size:13px; color:var(--text-muted);">Smart Rule-Driven Allocation Engine • Academic Year 2026-27</p>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn btn-secondary btn-sm" onclick="App.loadWardenDashboard()">🔄 Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="App.runAllocation()">▶️ Run Allocation (Draft)</button>
+      <button class="btn btn-success btn-sm" onclick="App.publishAllocations()">🚀 Publish Allocations</button>
+      <button class="btn btn-danger btn-sm" onclick="App.reopenAllocations()">🔓 Reopen</button>
+    </div>
+  </div>
+
+  <!-- Top-Level Executive KPI Grid (Interactive) -->
+  <div class="kpi-grid">
+    <div class="kpi-card" style="border-left:4px solid var(--primary);" onclick="App.switchWardenTab('applications')" title="Click to view all student applications & documents" role="button" tabindex="0">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="kpi-label">Total Applications</div>
+        <span style="font-size:11px; opacity:0.6; color:var(--primary); font-weight:700;">↗ Open</span>
+      </div>
+      <div id="kpi-total-apps" class="kpi-value">0</div>
+      <div class="kpi-sub">Registered Fresh Applicants</div>
+    </div>
+
+    <div class="kpi-card" style="border-left:4px solid var(--success);" onclick="App.switchWardenTab('allocations')" title="Click to view single-room allotments & allocation engine" role="button" tabindex="0">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="kpi-label">Published Allotments</div>
+        <span style="font-size:11px; opacity:0.6; color:var(--success); font-weight:700;">↗ Open</span>
+      </div>
+      <div id="kpi-allocated" class="kpi-value">0</div>
+      <div class="kpi-sub">Single Rooms Assigned</div>
+    </div>
+
+    <div class="kpi-card" style="border-left:4px solid var(--warning);" onclick="App.switchWardenTab('waitlist')" title="Click to view position-ranked waitlist" role="button" tabindex="0">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="kpi-label">Waitlisted Students</div>
+        <span style="font-size:11px; opacity:0.6; color:var(--warning); font-weight:700;">↗ Open</span>
+      </div>
+      <div id="kpi-waitlisted" class="kpi-value">0</div>
+      <div class="kpi-sub">Ranked Deterministically</div>
+    </div>
+
+    <div class="kpi-card" style="border-left:4px solid var(--accent);" onclick="App.switchWardenTab('hostels')" title="Click to view hostel inventory & room occupancies" role="button" tabindex="0">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="kpi-label">Campus Occupancy</div>
+        <span style="font-size:11px; opacity:0.6; color:var(--accent); font-weight:700;">↗ Open</span>
+      </div>
+      <div id="kpi-occupancy" class="kpi-value">0%</div>
+      <div class="kpi-sub">Available: <span id="kpi-avail-rooms">0</span> rooms</div>
+    </div>
+
+    <div class="kpi-card" style="border-left:4px solid var(--info);" onclick="App.switchWardenTab('applications')" title="Click to audit submitted student documents" role="button" tabindex="0">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="kpi-label">Pending Verifications</div>
+        <span style="font-size:11px; opacity:0.6; color:var(--info); font-weight:700;">↗ Open</span>
+      </div>
+      <div id="kpi-pending-docs" class="kpi-value">0</div>
+      <div class="kpi-sub">Documents Requiring Audit</div>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="tabs-nav">
+    <button id="btn-tab-overview" class="tab-btn active" onclick="App.switchWardenTab('overview')">📊 Overview & Charts</button>
+    <button id="btn-tab-applications" class="tab-btn" onclick="App.switchWardenTab('applications')">📝 Applications & Docs</button>
+    <button id="btn-tab-allocations" class="tab-btn" onclick="App.switchWardenTab('allocations')">🎯 Allocation Engine</button>
+    <button id="btn-tab-waitlist" class="tab-btn" onclick="App.switchWardenTab('waitlist')">⏳ Waitlist</button>
+    <button id="btn-tab-hostels" class="tab-btn" onclick="App.switchWardenTab('hostels')">🏢 Hostels & Rooms</button>
+    <button id="btn-tab-reservations" class="tab-btn" onclick="App.switchWardenTab('reservations')">⚖️ Reservation & Quotas</button>
+    <button id="btn-tab-payments" class="tab-btn" onclick="App.switchWardenTab('payments')">💳 Fee Payments</button>
+    <button id="btn-tab-reports" class="tab-btn" onclick="App.switchWardenTab('reports')">📑 Reports & Audit</button>
+    <button id="btn-tab-smriti" class="tab-btn" onclick="App.switchWardenTab('smriti')">🧠 Smriti Memory</button>
+  </div>
+
+  <!-- TAB 1: OVERVIEW & ANALYTICS CHARTS -->
+  <div id="w-tab-overview" class="tab-pane warden-tab active">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(400px, 1fr)); gap:20px;">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Category Distribution</div>
+          <span class="badge badge-secondary">All Applicants</span>
+        </div>
+        <div id="chart-category-dist" style="padding:10px 0;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Hostel Occupancy Rates</div>
+          <span class="badge badge-primary">Single Rooms</span>
+        </div>
+        <div id="chart-hostel-occupancy" style="padding:10px 0;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Priority Tier Breakdown (Allocated vs Waitlisted)</div>
+          <span class="badge badge-info">Groups 1 to 6</span>
+        </div>
+        <div id="chart-priority-dist" style="padding:10px 0;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Fairness & Transparency Metrics</div>
+          <span class="badge badge-success">Auditable</span>
+        </div>
+        <div style="padding:10px 0; font-size:13px;">
+          <p style="margin-bottom:8px;">• <strong>Deterministic Multi-Tier Decision:</strong> 100% rule-based matching without LLM or subjective scoring.</p>
+          <p style="margin-bottom:8px;">• <strong>Single Occupancy Isolation:</strong> All single rooms strictly assigned with capacity = 1.</p>
+          <p style="margin-bottom:8px;">• <strong>Gender Isolation:</strong> Boys and Girls pools are partitioned completely with zero gender crossover.</p>
+          <p style="margin-bottom:8px;">• <strong>Reserved Quota Retention:</strong> Unused quota seats remain strictly vacant unless explicitly released by Warden.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: APPLICATIONS & DOCUMENT VERIFICATION -->
+  <div id="w-tab-applications" class="tab-pane warden-tab">
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap; gap:10px;">
+        <div>
+          <div class="card-title">Student Applications Master List</div>
+          <div class="card-subtitle">Review applications, verify uploaded documents, and track eligibility</div>
+        </div>
+      </div>
+      <div class="table-toolbar">
+        <div class="subtabs-nav" style="margin-bottom:0;">
+          <button id="subtab-apps-ALL" class="subtab-btn active" onclick="App.filterWardenApplications('ALL')">All Applicants (<span id="count-apps-ALL">0</span>)</button>
+          <button id="subtab-apps-MALE" class="subtab-btn" onclick="App.filterWardenApplications('MALE')">👨 BOYS (<span id="count-apps-MALE">0</span>)</button>
+          <button id="subtab-apps-FEMALE" class="subtab-btn" onclick="App.filterWardenApplications('FEMALE')">👩 GIRLS (<span id="count-apps-FEMALE">0</span>)</button>
+        </div>
+        <div class="table-search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-warden-apps" placeholder="Search applicant, roll no, category..." oninput="App.searchWardenApplications(this.value)">
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Application ID</th>
+              <th>Student Name & Roll</th>
+              <th>Gender</th>
+              <th>Category</th>
+              <th>Priority Tier</th>
+              <th>Distance</th>
+              <th>Eligibility</th>
+              <th>Verification</th>
+            </tr>
+          </thead>
+          <tbody id="warden-apps-tbody"></tbody>
+        </table>
+      </div>
+      <div id="pagination-apps" class="pagination-container"></div>
+    </div>
+  </div>
+
+  <!-- TAB 3: ALLOCATION ENGINE & OVERRIDES -->
+  <div id="w-tab-allocations" class="tab-pane warden-tab">
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap; gap:10px;">
+        <div>
+          <div class="card-title">Hostel Room Allotments (Draft / Published)</div>
+          <div class="card-subtitle">Manage allocations, reclaim lapsed unpaid seats, and promote waitlisted applicants</div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-sm btn-outline-primary" onclick="App.loadSmritiPrePublishBriefing()">🧠 Smriti Briefing</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="App.lapseUnreportedAllocations()">⏰ Lapse Unreported Seats</button>
+          <button class="btn btn-sm btn-outline-success" onclick="App.promoteWaitlistCandidates()">⚡ Promote Waitlist</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.validateAllocations()">🔍 Run Validator</button>
+          <button class="btn btn-sm btn-primary" onclick="App.publishAllocations()">🚀 Publish All</button>
+        </div>
+      </div>
+
+      <!-- Smriti Pre-Publish Advisory Briefing Card (Dismissible) -->
+      <div id="smriti-prepublish-card" class="smriti-briefing-box" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+          <div>
+            <div style="font-size:13px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+              <span>🧠</span> Smriti Pre-Publish Advisory Briefing
+              <span class="badge badge-warning" style="font-size:10px; margin-left:6px;">Advisory only. Allocation is rule-based.</span>
+            </div>
+            <div id="smriti-briefing-content" style="font-size:12px; color:var(--text-main); line-height:1.5;">
+              Synthesizing historical patterns and cycle warnings...
+            </div>
+          </div>
+          <button class="btn btn-sm btn-secondary" onclick="App.dismissSmritiBriefing()" title="Dismiss briefing" style="padding:2px 8px; font-size:12px;">✕</button>
+        </div>
+      </div>
+
+      <div class="table-toolbar">
+        <div class="subtabs-nav" style="margin-bottom:0;">
+          <button id="subtab-alloc-ALL" class="subtab-btn active" onclick="App.filterWardenAllocations('ALL')">All Allotments (<span id="count-alloc-ALL">0</span>)</button>
+          <button id="subtab-alloc-MALE" class="subtab-btn" onclick="App.filterWardenAllocations('MALE')">👨 BOYS Hostels (<span id="count-alloc-MALE">0</span>)</button>
+          <button id="subtab-alloc-FEMALE" class="subtab-btn" onclick="App.filterWardenAllocations('FEMALE')">👩 GIRLS Hostels (<span id="count-alloc-FEMALE">0</span>)</button>
+        </div>
+        <div class="table-search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-warden-alloc" placeholder="Search allotment, student, room..." oninput="App.searchWardenAllocations(this.value)">
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Allocation ID</th>
+              <th>Student</th>
+              <th>Hostel</th>
+              <th>Room</th>
+              <th>Priority Tier</th>
+              <th>Quota</th>
+              <th>Allotment Status</th>
+              <th>Physical Check-In</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="warden-alloc-tbody"></tbody>
+        </table>
+      </div>
+      <div id="pagination-alloc" class="pagination-container"></div>
+    </div>
+  </div>
+
+  <!-- TAB 4: WAITLIST -->
+  <div id="w-tab-waitlist" class="tab-pane warden-tab">
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap; gap:10px;">
+        <div>
+          <div class="card-title">Deterministic Institutional Waitlist</div>
+          <div class="card-subtitle">Position-ranked waitlist cascaded automatically by quota and distance</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn btn-sm btn-primary" onclick="App.promoteWaitlistCandidates()">⚡ Promote Waitlist to Vacant Rooms</button>
+        </div>
+      </div>
+
+      <div class="table-toolbar">
+        <div class="subtabs-nav" style="margin-bottom:0;">
+          <button id="subtab-waitlist-ALL" class="subtab-btn active" onclick="App.filterWardenWaitlist('ALL')">All Waitlist (<span id="count-waitlist-ALL">0</span>)</button>
+          <button id="subtab-waitlist-MALE" class="subtab-btn" onclick="App.filterWardenWaitlist('MALE')">👨 BOYS Waitlist (<span id="count-waitlist-MALE">0</span>)</button>
+          <button id="subtab-waitlist-FEMALE" class="subtab-btn" onclick="App.filterWardenWaitlist('FEMALE')">👩 GIRLS Waitlist (<span id="count-waitlist-FEMALE">0</span>)</button>
+        </div>
+        <div class="table-search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-warden-waitlist" placeholder="Search waitlist, name, reason..." oninput="App.searchWardenWaitlist(this.value)">
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Position</th>
+              <th>Waitlist ID</th>
+              <th>Student Name</th>
+              <th>Gender</th>
+              <th>Category</th>
+              <th>Priority Tier</th>
+              <th>Distance</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="warden-waitlist-tbody"></tbody>
+        </table>
+      </div>
+      <div id="pagination-waitlist" class="pagination-container"></div>
+    </div>
+  </div>
+
+  <!-- TAB 5: HOSTELS & ROOMS -->
+  <div id="w-tab-hostels" class="tab-pane warden-tab">
+    <div id="warden-hostels-list"></div>
+  </div>
+
+  <!-- TAB 6: RESERVATION & QUOTAS -->
+  <div id="w-tab-reservations" class="tab-pane warden-tab">
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap; gap:10px;">
+        <div>
+          <div class="card-title">Configurable Reservation Rules & Quota Seats</div>
+          <div class="card-subtitle">Manage institutional quotas, adjust category percentages, or add custom reservation categories</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="btn btn-sm btn-outline-primary" onclick="App.openAddReservationCategoryModal()">+ Add Quota Category</button>
+          <button class="btn btn-sm btn-primary" onclick="App.saveAllReservationPercentages()">💾 Save Quota Percentages</button>
+        </div>
+      </div>
+      <p class="form-hint" style="margin-bottom:12px;">Unused reserved seats remain vacant by default and cannot spill over to general pool without explicit Warden release. Changes reflect directly during allocation runs.</p>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Percentage (%)</th>
+              <th>Seat Quota</th>
+              <th>Used Seats</th>
+              <th>Remaining Vacant</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="warden-reservations-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap; gap:10px;">
+        <div>
+          <div class="card-title">Institutional Priority Hierarchy (Deterministic Ranking Order)</div>
+          <div class="card-subtitle">Customize, reorder, or introduce new institutional priority tiers for single-occupancy allocation</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="btn btn-sm btn-outline-primary" onclick="App.openAddPriorityRuleModal()">+ Add Priority Tier</button>
+          <button class="btn btn-sm btn-primary" onclick="App.saveAllPriorityOrder()">💾 Save Priority Order</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Tier Code</th>
+              <th>Priority Group Name</th>
+              <th>Institutional Policy Description</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="warden-priority-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 7: FEE PAYMENTS -->
+  <div id="w-tab-payments" class="tab-pane warden-tab">
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap; gap:12px;">
+        <div>
+          <div class="card-title">Hostel Fee Payment Reconciliation</div>
+          <div class="card-subtitle">Verify offline transactions submitted by students with allocated rooms</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm btn-outline-success" onclick="App.setAllPaymentStatuses('VERIFIED')">✓ Verify All Pending</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="App.setAllPaymentStatuses('REJECTED')">✕ Reject All</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="App.saveAllPaymentVerifications()">💾 Save & Update Payment Statuses</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Transaction Ref</th>
+              <th>Student Details</th>
+              <th>Allocated Room</th>
+              <th>Amount</th>
+              <th>Mode</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="warden-payments-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 8: REPORTS & AUDIT TRAIL -->
+  <div id="w-tab-reports" class="tab-pane warden-tab">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📥 Official CSV Reports Generator</div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('APPLICATIONS')">📄 Applications Report</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('ALLOCATIONS')">🎯 Allocation Master</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('WAITLIST')">⏳ Official Waitlist</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('OCCUPANCY')">🏢 Occupancy Report</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('RESERVATIONS')">⚖️ Reservation Quota</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('PAYMENTS')">💳 Fee Payments</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('DOCUMENTS')">📁 Document Audits</button>
+        <button class="btn btn-secondary" onclick="App.downloadReportCsv('AUDIT')">🛡️ Full Audit Trail</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 9: SMRITI ADVISORY INSTITUTIONAL MEMORY (MODERN LLM INTERFACE) -->
+  <div id="w-tab-smriti" class="tab-pane warden-tab">
+    <div class="smriti-llm-container">
+      
+      <!-- Top LLM Bar: Title, status indicator, new chat action -->
+      <div class="smriti-header">
+        <div class="smriti-header-left">
+          <div class="smriti-avatar-brand">
+            <span>🧠</span>
+            <span class="smriti-status-pulse" title="Hindsight Connected"></span>
+          </div>
+          <div>
+            <div class="smriti-brand-title">
+              Smriti <span class="smriti-version-pill">Institutional Memory</span>
+            </div>
+            <div class="smriti-brand-subtitle">
+              Advisory AI assistant recalling administrative precedents, verification policies, and cycle trends.
+            </div>
+          </div>
+        </div>
+        <div class="smriti-header-right">
+          <span class="smriti-advisory-badge">
+            ⚠️ Advisory only &bull; Allocation is rule-based
+          </span>
+          <button type="button" class="smriti-header-btn" onclick="App.clearSmritiChat()" title="Start New Chat / Reset Feed">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+            New Chat
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Conversation Feed -->
+      <div id="smriti-chat-history" class="smriti-chat-history">
+        <!-- Initial Welcome Message -->
+        <div class="smriti-msg-row smriti-msg-assistant">
+          <div class="smriti-msg-avatar">
+            <div class="smriti-avatar-gradient">🧠</div>
+          </div>
+          <div class="smriti-msg-bubble">
+            <div class="smriti-msg-author">
+              <span class="smriti-author-name">Smriti</span>
+              <span class="smriti-author-role">Hindsight Memory</span>
+            </div>
+            <div class="smriti-msg-content">
+              <p><strong>Welcome to Smriti.</strong> I am your advisory institutional memory assistant powered by Hindsight agent memory.</p>
+              <div class="smriti-md-gap"></div>
+              <p>I recall past manual override justifications, document rejection patterns, waitlist promotion timelines, and quota release precedents from historical cycles (2024-25 &amp; 2025-26).</p>
+              <div class="smriti-callout-note">
+                <span>💡</span>
+                <span>Click any suggested precedent query below or type your question in the chat box to reflect on historical cases.</span>
+              </div>
+            </div>
+            <div class="smriti-msg-actions">
+              <button type="button" class="smriti-copy-btn" onclick="App.copySmritiResponse(this)" title="Copy response">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copy</span>
+              </button>
+              <span class="smriti-source-tag">Institutional Memory Bank (2024-25, 2025-26)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Dock: Suggested Queries + Prompt Capsule -->
+      <div class="smriti-bottom-dock">
+        <!-- Suggested Precedent Queries (Placed Just Above the Chat Box) -->
+        <div class="smriti-chips-section">
+          <div class="smriti-chips-header">
+            <span>💡</span>
+            <span>Suggested Precedent Queries:</span>
+          </div>
+          <div class="smriti-chips-container">
+            <button type="button" class="smriti-chip" onclick="App.askSmritiFromChip('Why were domicile certificates rejected last year?')">
+              <span>📑</span>
+              <span>Why were domicile certificates rejected last year?</span>
+            </button>
+            <button type="button" class="smriti-chip" onclick="App.askSmritiFromChip('What were the common reasons for PwD manual overrides?')">
+              <span>♿</span>
+              <span>What were the common reasons for PwD manual overrides?</span>
+            </button>
+            <button type="button" class="smriti-chip" onclick="App.askSmritiFromChip('Which reserved category seats lapsed and were released in previous cycles?')">
+              <span>⚖️</span>
+              <span>Which reserved category seats lapsed and were released in previous cycles?</span>
+            </button>
+            <button type="button" class="smriti-chip" onclick="App.askSmritiFromChip('When was the second waitlist round promoted in 2024-25?')">
+              <span>⏱️</span>
+              <span>When was waitlist round 2 promoted in 2024-25?</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Modern LLM Input Bar -->
+        <div class="smriti-input-capsule">
+          <textarea id="smriti-chat-input" class="smriti-prompt-input" rows="1" placeholder="Ask Smriti anything about past precedents, verification reasons, override cases..." onkeydown="App.handleSmritiKey(event)" oninput="App.autoGrowSmritiInput(this)"></textarea>
+          <button id="btn-smriti-send" class="smriti-send-action-btn" onclick="App.submitSmritiQuestion()" title="Send prompt" aria-label="Send">
+            <span id="smriti-send-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"></line>
+                <polyline points="5 12 12 5 19 12"></polyline>
+              </svg>
+            </span>
+            <span id="smriti-send-spinner" class="spinner" style="display:none; width:14px; height:14px; border-width:2px; border-top-color:#ffffff;"></span>
+          </button>
+        </div>
+
+        <div class="smriti-disclaimer-note">
+          Smriti provides historical precedent retrieval. Decisions are strictly advisory; all room allocations are governed deterministically by institutional rules.
+        </div>
+
+        <div id="smriti-error-banner" style="display:none;" class="smriti-error-banner"></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<!-- MODALS -->
+<!-- ============================================================ -->
+
+<!-- Manual Override & Cancellation Modal -->
+<div id="modal-override" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:550px; width:95%;">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;" id="override-modal-title">Manual Allocation Override</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-override')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="override-alloc-id">
+
+      <!-- Student & Current Allocation Summary -->
+      <div style="background:var(--bg-subtle); padding:12px 14px; border-radius:6px; border:1px solid var(--border); margin-bottom:16px;">
+        <div style="font-size:14px; font-weight:700; color:var(--text-main);" id="override-student-name">Student Name</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="override-current-room">Current: Room ---</div>
+      </div>
+
+      <!-- Action Type Selection -->
+      <div class="form-group">
+        <label class="form-label">Administrative Action *</label>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:4px;">
+          <label style="display:flex; align-items:center; gap:8px; padding:10px 12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); cursor:pointer; font-size:13px; font-weight:600;">
+            <input type="radio" name="override-action-type" value="REASSIGN" checked onchange="App.onOverrideActionChange(this.value)">
+            <span>🔀 Reassign Room</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; padding:10px 12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); cursor:pointer; font-size:13px; font-weight:600; color:var(--danger);">
+            <input type="radio" name="override-action-type" value="CANCEL" onchange="App.onOverrideActionChange(this.value)">
+            <span>🚫 Cancel Allotment</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Reassign Fields Container -->
+      <div id="override-reassign-fields">
+        <div class="form-group">
+          <label class="form-label" for="override-hostel-select">Target Hostel *</label>
+          <select id="override-hostel-select" class="form-control" onchange="App.updateOverrideRoomsList(this.value)"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="override-room-select">Target Available Room *</label>
+          <select id="override-room-select" class="form-control"></select>
+        </div>
+      </div>
+
+      <!-- Cancel Warning Container -->
+      <div id="override-cancel-warning" style="display:none; background:rgba(239,68,68,0.1); border:1px solid var(--danger); padding:14px; border-radius:6px; margin-bottom:16px;">
+        <strong style="color:var(--danger); font-size:13px; display:block; margin-bottom:4px;">⚠️ Revoke Room Allocation</strong>
+        <p style="font-size:12px; color:var(--text-main); margin:0; line-height:1.5;">
+          This action will officially cancel the student's room allotment, release their assigned single room immediately back into the available pool, and notify the student.
+        </p>
+      </div>
+
+      <!-- Smriti Similar Past Cases Panel -->
+      <div id="smriti-override-panel" class="smriti-advisory-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong style="font-size:12px; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+            <span>🧠</span> Similar Past Cases (Smriti Memory)
+          </strong>
+          <span class="badge badge-warning" style="font-size:10px;">Advisory only. Allocation is rule-based.</span>
+        </div>
+        <div id="smriti-override-cases" style="font-size:12px; color:var(--text-muted); line-height:1.4;">
+          Loading relevant precedents...
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="override-reason">Administrative Justification Reason *</label>
+        <textarea id="override-reason" class="form-control" rows="3" placeholder="Specify legitimate administrative justification reason..." required></textarea>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-override')">Cancel</button>
+      <button class="btn btn-primary" id="btn-submit-override" onclick="App.submitManualOverride()">Confirm & Apply Reassignment</button>
+    </div>
+  </div>
+</div>
+
+<!-- Release Reserved Seats Modal -->
+<div id="modal-release-seats" class="modal-overlay" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">Release Vacant Reserved Seats</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-release-seats')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
+        Release vacant reserved seats from <strong id="release-cat-name">---</strong> quota into the General pool. Available vacant seats: <strong id="release-avail-seats">0</strong>.
+      </p>
+      <input type="hidden" id="release-cat-input">
+      <div class="form-group">
+        <label class="form-label" for="release-count-input">Number of Seats to Release *</label>
+        <input type="number" id="release-count-input" class="form-control" min="1" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="release-reason-input">Administrative Reason for Release *</label>
+        <textarea id="release-reason-input" class="form-control" rows="3" placeholder="e.g. No further eligible applicants in reserved category after deadline expiry." required></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-release-seats')">Cancel</button>
+      <button class="btn btn-primary" onclick="App.submitReleaseSeats()">Release to General Pool</button>
+    </div>
+  </div>
+</div>
+
+<!-- Verify Documents Modal -->
+<div id="modal-verify-docs" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:640px; width:95%;">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">Verify Applicant Documents</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-verify-docs')">✕</button>
+    </div>
+    <div class="modal-body" id="verify-docs-list" style="max-height:65vh; overflow-y:auto;"></div>
+    <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-verify-docs')">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-verify-docs" onclick="App.saveAllDocumentVerifications()">
+        💾 Save & Update Document Statuses
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Reservation Quota Category -->
+<div id="modal-add-res-category" class="modal-overlay" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">+ Add Quota Category</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-add-res-category')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="add-cat-name">Category Code / Name *</label>
+        <input type="text" id="add-cat-name" class="form-control" placeholder="e.g. DEFENCE, SPORTS, KM, STAFF_WARD" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-cat-pct">Quota Percentage (%) *</label>
+        <input type="number" id="add-cat-pct" class="form-control" placeholder="e.g. 5.0" step="0.1" min="0" max="100" required>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-add-res-category')">Cancel</button>
+      <button class="btn btn-primary" onclick="App.submitAddReservationCategory()">Add Category</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Edit Reservation Quota Category -->
+<div id="modal-edit-res-category" class="modal-overlay" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">✏️ Edit Quota Category</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-edit-res-category')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-cat-rule-id">
+      <div class="form-group">
+        <label class="form-label" for="edit-cat-name">Category Code</label>
+        <input type="text" id="edit-cat-name" class="form-control" readonly style="background:var(--bg-card); cursor:not-allowed;">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-cat-pct">Quota Percentage (%) *</label>
+        <input type="number" id="edit-cat-pct" class="form-control" step="0.1" min="0" max="100" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-cat-status">Status</label>
+        <select id="edit-cat-status" class="form-control">
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="INACTIVE">INACTIVE</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-edit-res-category')">Cancel</button>
+      <button class="btn btn-primary" onclick="App.submitEditReservationCategory()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Priority Tier -->
+<div id="modal-add-priority-tier" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">+ Add Priority Tier</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-add-priority-tier')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="add-prio-code">Tier Code *</label>
+          <input type="text" id="add-prio-code" class="form-control" placeholder="e.g. GROUP_7, PRIO_SPORTS" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="add-prio-rank">Order Rank *</label>
+          <input type="number" id="add-prio-rank" class="form-control" placeholder="e.g. 7" min="1" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-prio-name">Priority Group Name *</label>
+        <input type="text" id="add-prio-name" class="form-control" placeholder="e.g. National Sports Candidates" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-prio-desc">Institutional Policy Description</label>
+        <textarea id="add-prio-desc" class="form-control" rows="2" placeholder="Eligibility description for this priority tier..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-add-priority-tier')">Cancel</button>
+      <button class="btn btn-primary" onclick="App.submitAddPriorityTier()">Add Tier</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Edit Priority Tier -->
+<div id="modal-edit-priority-tier" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">✏️ Edit Priority Tier</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-edit-priority-tier')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-prio-rule-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="edit-prio-code">Tier Code</label>
+          <input type="text" id="edit-prio-code" class="form-control" readonly style="background:var(--bg-card); cursor:not-allowed;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="edit-prio-rank">Order Rank *</label>
+          <input type="number" id="edit-prio-rank" class="form-control" min="1" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-prio-name">Priority Group Name *</label>
+        <input type="text" id="edit-prio-name" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-prio-desc">Institutional Policy Description</label>
+        <textarea id="edit-prio-desc" class="form-control" rows="2"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-prio-status">Status</label>
+        <select id="edit-prio-status" class="form-control">
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="INACTIVE">INACTIVE</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-edit-priority-tier')">Cancel</button>
+      <button class="btn btn-primary" onclick="App.submitEditPriorityTier()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Single Room -->
+<div id="modal-add-room" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:500px;">
+    <div class="modal-header">
+      <h3 style="font-size:18px; font-weight:700;">+ Add Single Occupancy Room</h3>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-add-room')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="add-room-hostel-id">
+      <div class="form-group">
+        <label class="form-label">Target Hostel</label>
+        <input type="text" id="add-room-hostel-name" class="form-control" readonly style="background:var(--bg-card); cursor:not-allowed;">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="add-room-floor">Floor Number *</label>
+          <input type="number" id="add-room-floor" class="form-control" min="1" max="10" value="1" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="add-room-number">Room Number *</label>
+          <input type="text" id="add-room-number" class="form-control" placeholder="e.g. 106, 204, 305" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Occupancy Model</label>
+        <div style="background:var(--bg-card); border:1px solid var(--border); padding:10px 12px; border-radius:6px; font-size:13px; color:var(--text-main);">
+          🔒 <strong>Single Occupancy (1 Bed)</strong> — Enforced institutional standard
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-room-remarks">Remarks / Description</label>
+        <input type="text" id="add-room-remarks" class="form-control" placeholder="e.g. Single Room with balcony / corner window">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-add-room')">Cancel</button>
+      <button class="btn btn-primary" onclick="App.submitAddRoom()">+ Create Room</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Hostel Residents & Occupants List -->
+<div id="modal-hostel-residents" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:850px; width:95%;">
+    <div class="modal-header" style="flex-wrap:wrap; gap:10px;">
+      <div>
+        <h3 id="hostel-residents-modal-title" style="font-size:18px; font-weight:700;">👥 Hostel Residents</h3>
+        <div id="hostel-residents-modal-sub" style="font-size:13px; color:var(--text-muted);">List of students currently allocated to this residence</div>
+      </div>
+      <button class="btn btn-sm btn-secondary" onclick="App.closeModal('modal-hostel-residents')">✕</button>
+    </div>
+    <div class="modal-body" style="max-height:65vh; overflow-y:auto;">
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Room</th>
+              <th>Student Name</th>
+              <th>Student ID</th>
+              <th>Gender</th>
+              <th>Quota / Category</th>
+              <th>Priority Tier</th>
+              <th>Fee / DD Status</th>
+              <th>Physical Check-In</th>
+            </tr>
+          </thead>
+          <tbody id="hostel-residents-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+      <span id="hostel-residents-count" style="font-size:13px; color:var(--text-muted); font-weight:600;">0 Occupants</span>
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-hostel-residents')">Close</button>
+    </div>
+  </div>
+</div>

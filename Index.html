@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HOSTEL 360 | Smart Hostel Allocation Management System</title>
+  <script>
+    (function () {
+      var saved = localStorage.getItem('h360_theme');
+      if (saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-brand" onclick="App.currentUser ? (App.currentUser.role === 'WARDEN' ? App.navigate('warden-dashboard') : App.navigate('student-dashboard')) : App.navigate('landing')">
+      <div class="nav-logo-icon">H</div>
+      <div>
+        <div class="nav-title">HOSTEL 360</div>
+        <div class="nav-subtitle">Smart Hostel Allocation Management System</div>
+      </div>
+    </div>
+
+    <div class="nav-user">
+      <!-- Dark / Light Mode Toggle Button (Accessible on Every Page) -->
+      <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="App.toggleTheme()" title="Toggle Dark / Light Mode" aria-label="Toggle Dark / Light Mode">
+        <span id="theme-toggle-icon">🌙</span>
+        <span id="theme-toggle-text">Dark</span>
+      </button>
+
+      <div id="nav-user-badge" class="user-badge" style="display:none;">
+        <span id="nav-user-name">User</span>
+        <span id="nav-user-role" class="role-pill">ROLE</span>
+      </div>
+      <button id="nav-logout-btn" class="btn btn-danger btn-sm" style="display:none;" onclick="App.logout()">
+        Sign Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="main-container">
+
+    <!-- LANDING PAGE VIEW -->
+    <div id="view-landing" class="view-container">
+      <div style="text-align:center; max-width:800px; margin:40px auto 30px auto;">
+        <h1 style="font-size:36px; font-weight:900; color:var(--text-main); letter-spacing:-1px; line-height:1.2; margin-bottom:12px;">
+          Rule-Driven, Transparent Hostel Allocation
+        </h1>
+        <p style="font-size:16px; color:var(--text-muted); line-height:1.6;">
+          Automating student applications, Google Drive document verification, priority hierarchy calculation, reservation quotas, and deterministic single-room assignments.
+        </p>
+      </div>
+
+      <!-- Role Selection Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:24px; max-width:900px; margin:0 auto 40px auto;">
+        <!-- Student Card -->
+        <div class="card" style="text-align:center; padding:36px 24px; cursor:pointer; transition:transform 0.2s ease, box-shadow 0.2s ease;" onclick="App.navigate('student-login')" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--shadow-sm)'">
+          <div style="font-size:44px; margin-bottom:12px;">🎓</div>
+          <h3 style="font-size:20px; font-weight:800; color:var(--primary); margin-bottom:8px;">Student Portal</h3>
+          <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px; min-height:40px;">
+            Submit fresh hostel applications, upload verified undertakings to Drive, track lifecycle progress, and view allotment letters.
+          </p>
+          <button class="btn btn-primary btn-lg" style="width:100%;">Student Login &rarr;</button>
+        </div>
+
+        <!-- Warden Card -->
+        <div class="card" style="text-align:center; padding:36px 24px; cursor:pointer; transition:transform 0.2s ease, box-shadow 0.2s ease; border-top:4px solid var(--primary);" onclick="App.navigate('warden-login')" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--shadow-sm)'">
+          <div style="font-size:44px; margin-bottom:12px;">🛡️</div>
+          <h3 style="font-size:20px; font-weight:800; color:var(--text-main); margin-bottom:8px;">Warden Administration</h3>
+          <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px; min-height:40px;">
+            Audit submitted documents, configure reservation quotas, run multi-tier allocation engine, execute manual overrides, and export reports.
+          </p>
+          <button class="btn btn-secondary btn-lg" style="width:100%;">Warden / Admin Login &rarr;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDENT LOGIN VIEW -->
+    <?!= include('StudentLogin'); ?>
+
+    <!-- WARDEN LOGIN VIEW -->
+    <?!= include('WardenLogin'); ?>
+
+    <!-- STUDENT DASHBOARD VIEW -->
+    <?!= include('StudentDashboard'); ?>
+
+    <!-- WARDEN DASHBOARD VIEW -->
+    <?!= include('WardenDashboard'); ?>
+
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="footer">
+    HOSTEL 360 • Smart Hostel Allocation Management System • Built natively with Google Apps Script & Google Sheets
+  </footer>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Loading Spinner Overlay -->
+  <div id="loading-overlay" style="display:none;">
+    <div class="spinner"></div>
+    <div id="loading-text" style="margin-top:14px; font-weight:600; color:#ffffff; font-size:14px;">Loading...</div>
+  </div>
+
+  <!-- Client-Side Controller Scripts -->
+  <?!= include('JavaScript'); ?>
+</body>
+</html>
