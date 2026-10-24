@@ -1,0 +1,2876 @@
+<script>
+/**
+ * HOSTEL 360 - JavaScript.html
+ * Robust Vanilla JavaScript Client-Side Controller, State Manager & API Wrapper.
+ */
+
+var App = {
+  token: null,
+  currentUser: null,
+  currentView: 'landing',
+  studentData: null,
+  wardenData: null,
+  allotmentLetterData: null,
+  currentTheme: 'light',
+
+  /**
+   * Initializes theme from localStorage or system preference
+   */
+  initTheme: function () {
+    var savedTheme = localStorage.getItem('h360_theme');
+    if (!savedTheme) {
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        savedTheme = 'dark';
+      } else {
+        savedTheme = 'light';
+      }
+    }
+    this.setTheme(savedTheme);
+  },
+
+  /**
+   * Toggles between Dark and Light mode
+   */
+  toggleTheme: function () {
+    var newTheme = (this.currentTheme === 'dark') ? 'light' : 'dark';
+    this.setTheme(newTheme);
+  },
+
+  /**
+   * Applies the theme and updates toggle button state
+   */
+  setTheme: function (theme) {
+    this.currentTheme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('h360_theme', theme);
+
+    var iconEl = document.getElementById('theme-toggle-icon');
+    var textEl = document.getElementById('theme-toggle-text');
+    if (iconEl && textEl) {
+      if (theme === 'dark') {
+        iconEl.textContent = '☀️';
+        textEl.textContent = 'Light';
+      } else {
+        iconEl.textContent = '🌙';
+        textEl.textContent = 'Dark';
+      }
+    }
+  },
+
+  /**
+   * Initializes application state on DOM ready
+   */
+  init: function () {
+    this.initTheme();
+    this.token = sessionStorage.getItem('h360_token') || null;
+    if (this.token) {
+      this.verifySavedSession();
+    } else {
+      this.navigate('landing');
+    }
+  },
+
+  /**
+   * Generic Promise wrapper for google.script.run
+   */
+  callServer: function (functionName) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    var self = this;
+
+    return new Promise(function (resolve, reject) {
+      var runner = google.script.run
+        .withSuccessHandler(function (response) {
+          if (response && response.success) {
+            resolve(response.data);
+          } else {
+            var errMsg = (response && response.error) ? response.error : 'An unexpected server error occurred.';
+            self.showToast(errMsg, 'error');
+            reject(new Error(errMsg));
+          }
+        })
+        .withFailureHandler(function (err) {
+          var msg = err.message || 'Network communication error.';
+          self.showToast(msg, 'error');
+          reject(err);
+        });
+
+      runner[functionName].apply(runner, args);
+    });
+  },
+
+  /**
+   * Verifies existing token on page reload
+   */
+  verifySavedSession: function () {
+    var self = this;
+    this.showLoading('Verifying session...');
+    this.callServer('apiVerifySession', this.token)
+      .then(function (session) {
+        self.currentUser = session;
+        self.hideLoading();
+        if (session.role === 'WARDEN') {
+          self.navigate('warden-dashboard');
+        } else if (session.role === 'STUDENT') {
+          self.navigate('student-dashboard');
+        } else {
+          self.logout();
+        }
+      })
+      .catch(function () {
+        self.hideLoading();
+        self.logout();
+      });
+  },
+
+  /**
+   * View router
+   */
+  navigate: function (viewName) {
+    this.currentView = viewName;
+    var views = document.querySelectorAll('.view-container');
+    views.forEach(function (v) { v.style.display = 'none'; });
+
+    var target = document.getElementById('view-' + viewName);
+    if (target) {
+      target.style.display = 'block';
+    }
+
+    this.updateNavbar();
+
+    if (viewName === 'student-dashboard') {
+      this.loadStudentDashboard();
+    } else if (viewName === 'warden-dashboard') {
+      this.loadWardenDashboard();
+    }
+  },
+
+  /**
+   * Updates navbar UI state based on session
+   */
+  updateNavbar: function () {
+    var userBadge = document.getElementById('nav-user-badge');
+    var logoutBtn = document.getElementById('nav-logout-btn');
+
+    if (this.currentUser) {
+      userBadge.style.display = 'flex';
+      logoutBtn.style.display = 'inline-flex';
+      document.getElementById('nav-user-name').textContent = this.currentUser.name || this.currentUser.email;
+      var rolePill = document.getElementById('nav-user-role');
+      rolePill.textContent = this.currentUser.role;
+      rolePill.className = 'role-pill ' + this.currentUser.role.toLowerCase();
+    } else {
+      userBadge.style.display = 'none';
+      logoutBtn.style.display = 'none';
+    }
+  },
+
+  /**
+   * Login action
+   */
+  login: function (email, password) {
+    var self = this;
+    if (!email || !password) {
+      this.showToast('Please enter both email and password.', 'warning');
+      return;
+    }
+
+    this.showLoading('Authenticating...');
+    this.callServer('apiLogin', email, password)
+      .then(function (session) {
+        self.token = session.token;
+        self.currentUser = session.user;
+        sessionStorage.setItem('h360_token', session.token);
+        self.hideLoading();
+        self.showToast('Login successful. Welcome, ' + (session.user.name || session.user.email), 'success');
+
+        if (session.user.role === 'WARDEN') {
+          self.navigate('warden-dashboard');
+        } else {
+          self.navigate('student-dashboard');
+        }
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  /**
+   * Quick Demo Login helper
+   */
+  demoLogin: function (role) {
+    if (role === 'STUDENT') {
+      this.login('student.demo@hostel360.test', 'Student@123');
+    } else if (role === 'WARDEN') {
+      this.login('warden.demo@hostel360.test', 'Warden@123');
+    }
+  },
+
+  /**
+   * Logout action
+   */
+  logout: function () {
+    var self = this;
+    if (this.token) {
+      this.callServer('apiLogout', this.token).catch(function () {});
+    }
+    this.token = null;
+    this.currentUser = null;
+    sessionStorage.removeItem('h360_token');
+    this.navigate('landing');
+    this.showToast('Logged out successfully.', 'info');
+  },
+
+  // ============================================================
+  // STUDENT DASHBOARD CONTROLLERS
+  // ============================================================
+
+  loadStudentDashboard: function () {
+    var self = this;
+    if (!this.token) {
+      this.navigate('landing');
+      return;
+    }
+    this.showLoading('Loading student portal...');
+    this.callServer('apiGetStudentDashboard', this.token)
+      .then(function (data) {
+        self.studentData = data;
+        self.hideLoading();
+        self.renderStudentDashboard(data);
+      })
+      .catch(function (err) {
+        self.hideLoading();
+        if (err && err.message && (err.message.indexOf('Unauthorized') !== -1 || err.message.indexOf('session') !== -1 || err.message.indexOf('Session') !== -1)) {
+          self.logout();
+        }
+      });
+  },
+
+  renderStudentDashboard: function (data) {
+    var self = this;
+    // 1. Profile Header
+    var student = data.student || {};
+    document.getElementById('stu-display-name').textContent = student.Name || (self.currentUser ? self.currentUser.name : '') || 'Student';
+    document.getElementById('stu-display-enrollment').textContent = student.EnrollmentNo || 'Pending Submission';
+    document.getElementById('stu-display-programme').textContent = student.Programme || 'N/A';
+    document.getElementById('stu-display-category').textContent = student.Category || 'GENERAL';
+
+    // 2. Timeline Step Rendering (8 Stages)
+    var step = 1;
+
+    // Check if an application has actually been submitted:
+    var hasSubmittedApp = data.application && data.application.ApplicationID &&
+      (data.application.Status === 'SUBMITTED' || data.application.Status === 'VERIFIED');
+
+    if (!hasSubmittedApp) {
+      // Stage 1: Application submission pending (active circle 1, no green ticks)
+      step = 1;
+    } else {
+      // Application IS submitted -> At least Stage 2 (Submitted shows green tick ✓)
+      step = 2;
+
+      // Check if Eligibility is determined
+      if (data.application.EligibilityStatus === 'ELIGIBLE') {
+        step = 3; // Eligibility confirmed (✓), Stage 3 Doc Verification active
+
+        // Check if all category-required documents are verified:
+        var requiredDocList = data.requiredDocs || data.mandatoryDocs || [];
+        if (data.documents && requiredDocList.length > 0) {
+          var dMap = {};
+          data.documents.forEach(function (d) { dMap[d.DocumentType] = d; });
+          var allVerified = requiredDocList.every(function (dt) {
+            return dMap[dt] && String(dMap[dt].VerificationStatus).toUpperCase() === 'VERIFIED';
+          });
+          // If all required documents are verified for a submitted application, Step 3 (Doc Verification) is completed (✓)
+          if (allVerified) {
+            step = 4; // Advances to Step 4 (Allocation), so Steps 1, 2, 3 show green ticks ✓
+          }
+        }
+      }
+
+      // Check for Draft Allocation in review
+      if (data.analytics && data.analytics.timelineStep >= 5) {
+        step = data.analytics.timelineStep;
+      }
+
+      // Check for Published Allocation / Fee Payment / Physical Registration
+      if (data.allocation && data.allocation.status === 'PUBLISHED') {
+        var isRegistered = (data.allocation.registrationStatus === 'COMPLETED');
+        var hasVerifiedPayment = (data.payments || []).some(function (p) { return p.Status === 'VERIFIED'; });
+
+        if (isRegistered) {
+          step = 9; // All 8 stages completed with green checkmarks ✓!
+        } else if (hasVerifiedPayment) {
+          step = 8; // Fee verified -> Stage 8: Physical Registration & Key Handover active
+        } else {
+          step = 7; // Published -> Stage 7: Fee Payment active (3-day countdown)
+        }
+      }
+    }
+
+    var steps = document.querySelectorAll('#student-timeline .timeline-step');
+    steps.forEach(function (el, idx) {
+      var stepNum = idx + 1;
+      el.classList.remove('completed', 'active');
+      if (stepNum < step) el.classList.add('completed');
+      else if (stepNum === step) el.classList.add('active');
+    });
+
+    // 3. Populate Application Form fields if previously submitted
+    if (student.StudentID) {
+      document.getElementById('app-name').value = student.Name || '';
+      document.getElementById('app-enrollment').value = student.EnrollmentNo || '';
+      document.getElementById('app-dob').value = student.DateOfBirth ? String(student.DateOfBirth).split('T')[0] : '';
+      document.getElementById('app-gender').value = student.Gender || '';
+      document.getElementById('app-nationality').value = student.Nationality || 'INDIAN';
+      document.getElementById('app-programme').value = student.Programme || '';
+      document.getElementById('app-department').value = student.Department || '';
+      document.getElementById('app-joining-date').value = student.JoiningDate ? String(student.JoiningDate).split('T')[0] : '';
+      document.getElementById('app-category').value = student.Category || 'GENERAL';
+      document.getElementById('app-region-type').value = student.RegionType || 'OUTSIDE_DELHI';
+      document.getElementById('app-ncr-resident').checked = (student.IsDelhiNCRResident === true || student.IsDelhiNCRResident === 'true');
+      document.getElementById('app-parent-posted-outside').checked = (student.IsParentPostedOutsideNCR === true || student.IsParentPostedOutsideNCR === 'true');
+      document.getElementById('app-pwd').checked = (student.IsPwD === true || student.IsPwD === 'true');
+      document.getElementById('app-mobile').value = student.StudentMobile || '';
+      document.getElementById('app-parent-name').value = student.ParentName || '';
+      document.getElementById('app-parent-mobile').value = student.ParentMobile || '';
+      document.getElementById('app-address').value = student.PermanentAddress || '';
+      document.getElementById('app-city').value = student.PermanentCity || '';
+      document.getElementById('app-state').value = student.PermanentState || '';
+      document.getElementById('app-pincode').value = student.PermanentPincode || '';
+      document.getElementById('app-guardian-name').value = student.LocalGuardianName || '';
+      document.getElementById('app-guardian-contact').value = student.LocalGuardianContact || '';
+      document.getElementById('app-emergency-contact').value = student.EmergencyContact || '';
+    }
+
+    // Populate Hostel Preferences Select Options filtered strictly by gender
+    var stuGender = student.Gender || (document.getElementById('app-gender') ? document.getElementById('app-gender').value : '') || 'MALE';
+    var initP1 = data.application ? data.application.FirstHostelPref : '';
+    var initP2 = data.application ? data.application.SecondHostelPref : '';
+    this.renderHostelPreferenceOptions(stuGender, initP1, initP2, data.hostelsList);
+
+    var noPrefCheck = document.getElementById('app-no-pref');
+    if (data.application) {
+      if (noPrefCheck) {
+        noPrefCheck.checked = (data.application.NoPreference === true || data.application.NoPreference === 'true');
+        this.toggleNoPreference(noPrefCheck.checked);
+      }
+    }
+
+    // 4. Render Allocation Card & Allotment Letter Button
+    var allocContainer = document.getElementById('stu-allocation-card-container');
+    var letterBtn = document.getElementById('stu-btn-view-letter');
+
+    if (data.allocation && data.allocation.status === 'PUBLISHED') {
+      if (letterBtn) letterBtn.style.display = 'inline-flex';
+      var isRegistered = (data.allocation.registrationStatus === 'COMPLETED');
+      var isOverdue = data.allocation.isOverdue;
+      var hoursRem = data.allocation.hoursRemaining || 0;
+      var daysRem = data.allocation.daysRemaining || 0;
+
+      var regBadge = '';
+      if (isRegistered) {
+        regBadge = '<span class="badge badge-success" style="font-size:12px; margin-left:6px;">✓ REGISTRATION COMPLETED</span>';
+      } else if (isOverdue) {
+        regBadge = '<span class="badge badge-danger" style="font-size:12px; margin-left:6px;">🔴 DEADLINE EXPIRED (OVERDUE)</span>';
+      } else {
+        regBadge = '<span class="badge badge-warning" style="font-size:12px; margin-left:6px;">⏳ ' + daysRem + 'd (' + hoursRem + 'h) REMAINING</span>';
+      }
+
+      var regNotice = '';
+      if (isRegistered) {
+        regNotice =
+          '<div style="background:rgba(16,185,129,0.2); border:1px solid var(--success); color:#ffffff; padding:12px 16px; border-radius:6px; margin-top:14px; font-size:13px;">' +
+          '🎉 <strong>Physical Registration & Key Handover Complete!</strong> You have officially taken possession of your single-occupancy room.' +
+          '</div>';
+      } else if (isOverdue) {
+        regNotice =
+          '<div style="background:rgba(239,68,68,0.25); border:1px solid var(--danger); color:#ffffff; padding:12px 16px; border-radius:6px; margin-top:14px; font-size:13px;">' +
+          '⚠️ <strong>Fee & Reporting Deadline Expired:</strong> Your fee submission deadline has elapsed. Please complete your fee payment/DD submission immediately, or this seat will be forfeited and reallocated to waitlisted candidates.' +
+          '</div>';
+      } else {
+        regNotice =
+          '<div style="background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#ffffff; padding:12px 16px; border-radius:6px; margin-top:14px; font-size:13px;">' +
+          '📌 <strong>Fee & Reporting Deadline:</strong> Please deposit your fee/DD details within <strong>' + daysRem + ' days (' + hoursRem + ' hours)</strong> and visit the Warden Office with your printed Allotment Letter for physical check-in.' +
+          '</div>';
+      }
+
+      allocContainer.innerHTML =
+        '<div class="allocation-spotlight">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
+        '<span class="spotlight-badge">OFFICIALLY ALLOTTED • SINGLE OCCUPANCY</span>' +
+        regBadge +
+        '</div>' +
+        '<div class="spotlight-room">Room ' + data.allocation.roomNumber + ' (Floor ' + data.allocation.floorNumber + ')</div>' +
+        '<div class="spotlight-hostel">' + data.allocation.hostelName + ' (' + data.allocation.hostelCode + ')</div>' +
+        '<div style="font-size:13px; opacity:0.9;">Allotment Date: ' + data.allocation.allocatedDate + ' | Tier: ' + data.allocation.priorityGroup + '</div>' +
+        '<div class="spotlight-explanation"><strong>Official Decision Explanation:</strong><br>' + data.allocation.explanation + '</div>' +
+        regNotice +
+        '<div style="margin-top:16px; display:flex; gap:10px;">' +
+        '<button class="btn btn-secondary btn-sm" onclick="App.openAllotmentLetterModal()">📄 View Digital Allotment Letter</button>' +
+        '</div>' +
+        '</div>';
+    } else if (data.waitlist) {
+      if (letterBtn) letterBtn.style.display = 'none';
+      allocContainer.innerHTML =
+        '<div class="card" style="border-left: 5px solid var(--warning);">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+        '<h3 style="color:var(--warning);">Status: Waitlisted (Position #' + data.waitlist.position + ')</h3>' +
+        '<span class="badge badge-warning">WAITLISTED</span>' +
+        '</div>' +
+        '<p style="font-size:13px; margin:10px 0; color:var(--text-muted);">' + data.waitlist.explanation + '</p>' +
+        '</div>';
+    } else if (!hasSubmittedApp) {
+      if (letterBtn) letterBtn.style.display = 'none';
+      allocContainer.innerHTML =
+        '<div class="card" style="text-align:center; padding:28px 20px; border:2px dashed var(--primary); background:rgba(37,99,235,0.03);">' +
+        '<div style="font-size:32px; margin-bottom:8px;">📝</div>' +
+        '<h4 style="color:var(--text-main); margin-bottom:6px;">Stage 1: Application Submission Pending</h4>' +
+        '<p style="font-size:13px; color:var(--text-muted); max-width:550px; margin:0 auto 16px auto;">Please review your student profile details, select your preferred hostels in the form below, and click <strong>Submit Application</strong> to begin your allotment lifecycle.</p>' +
+        '<button type="button" class="btn btn-primary btn-sm" onclick="App.switchStudentTab(\'application\'); document.getElementById(\'app-pref-1\').focus();">Proceed to Application Form ↓</button>' +
+        '</div>';
+    } else {
+      if (letterBtn) letterBtn.style.display = 'none';
+      allocContainer.innerHTML =
+        '<div class="card" style="text-align:center; padding:30px; color:var(--text-muted);">' +
+        '<div style="font-size:32px; margin-bottom:8px;">⏳</div>' +
+        '<h4 style="color:var(--text-main);">Allocation Not Yet Published</h4>' +
+        '<p style="font-size:13px; margin-top:4px;">Official single-occupancy room allotments are undergoing administrative review and will be published shortly.</p>' +
+        '</div>';
+    }
+
+    // 5. Render Documents List
+    this.renderStudentDocumentsTable(data.documents, data.requiredDocs || data.mandatoryDocs, data.student);
+
+    // 6. Render Payments List & Dynamic Lock/Unlock state
+    var isRoomAllocated = (data.allocation && data.allocation.status === 'PUBLISHED');
+    var lockedBanner = document.getElementById('stu-payment-locked-banner');
+    var activeContainer = document.getElementById('stu-payment-active-container');
+    if (lockedBanner && activeContainer) {
+      if (isRoomAllocated) {
+        lockedBanner.style.display = 'none';
+        activeContainer.style.display = 'block';
+      } else {
+        lockedBanner.style.display = 'block';
+        activeContainer.style.display = 'none';
+      }
+    }
+    this.renderStudentPaymentsTable(data.payments, data.feeAmount);
+  },
+
+  switchStudentTab: function (tabName) {
+    var tabs = document.querySelectorAll('.student-tab');
+    var btns = document.querySelectorAll('#view-student-dashboard .tab-btn');
+    tabs.forEach(function (t) { t.classList.remove('active'); });
+    btns.forEach(function (b) { b.classList.remove('active'); });
+
+    var targetTab = document.getElementById('stu-tab-' + tabName);
+    var targetBtn = document.getElementById('btn-stu-tab-' + tabName);
+    if (targetTab) targetTab.classList.add('active');
+    if (targetBtn) targetBtn.classList.add('active');
+  },
+
+  onGenderChange: function (gender) {
+    var p1 = document.getElementById('app-pref-1') ? document.getElementById('app-pref-1').value : '';
+    var p2 = document.getElementById('app-pref-2') ? document.getElementById('app-pref-2').value : '';
+    this.renderHostelPreferenceOptions(gender, p1, p2);
+  },
+
+  renderHostelPreferenceOptions: function (gender, selectedP1, selectedP2, customHostList) {
+    var hostList = customHostList || (this.studentData && this.studentData.hostelsList) || [];
+    var p1Select = document.getElementById('app-pref-1');
+    var p2Select = document.getElementById('app-pref-2');
+    if (!p1Select || !p2Select) return;
+
+    var normalizedGender = String(gender || '').toUpperCase().trim();
+    var filteredHostels = hostList.filter(function (h) {
+      if (!normalizedGender) return true;
+      var hGender = String(h.Gender || '').toUpperCase().trim();
+      if (normalizedGender === 'MALE' || normalizedGender === 'BOYS') {
+        return hGender === 'BOYS' || hGender === 'MALE';
+      }
+      if (normalizedGender === 'FEMALE' || normalizedGender === 'GIRLS') {
+        return hGender === 'GIRLS' || hGender === 'FEMALE';
+      }
+      return hGender === normalizedGender;
+    });
+
+    p1Select.innerHTML = '<option value="">-- Select Preferred Hostel --</option>';
+    p2Select.innerHTML = '<option value="">-- Select Second Preference --</option>';
+
+    filteredHostels.forEach(function (h) {
+      p1Select.innerHTML += '<option value="' + h.HostelID + '">' + h.Name + ' (' + h.Code + ' - ' + h.Gender + ')</option>';
+      p2Select.innerHTML += '<option value="' + h.HostelID + '">' + h.Name + ' (' + h.Code + ' - ' + h.Gender + ')</option>';
+    });
+
+    // Populate or auto-select compatible preferences
+    if (selectedP1 && filteredHostels.some(function(h){ return h.HostelID === selectedP1; })) {
+      p1Select.value = selectedP1;
+    } else if (filteredHostels.length > 0) {
+      p1Select.value = filteredHostels[0].HostelID;
+    }
+
+    if (selectedP2 && filteredHostels.some(function(h){ return h.HostelID === selectedP2; })) {
+      p2Select.value = selectedP2;
+    } else if (filteredHostels.length > 1) {
+      p2Select.value = filteredHostels[1].HostelID;
+    }
+  },
+
+  toggleNoPreference: function (isNoPref) {
+    var p1 = document.getElementById('app-pref-1');
+    var p2 = document.getElementById('app-pref-2');
+    if (isNoPref) {
+      p1.disabled = true;
+      p2.disabled = true;
+      p1.value = '';
+      p2.value = '';
+    } else {
+      p1.disabled = false;
+      p2.disabled = false;
+    }
+  },
+
+  getDocumentDisplayName: function (dt) {
+    var labels = {
+      'ADMISSION_FEE_RECEIPT': 'ADMISSION FEE RECEIPT',
+      'MEDICAL_FITNESS': 'MEDICAL FITNESS',
+      'PERMANENT_ADDRESS_PROOF': 'PERMANENT ADDRESS PROOF',
+      'PARENT_UNDERTAKING': 'PARENT UNDERTAKING',
+      'STUDENT_UNDERTAKING': 'STUDENT UNDERTAKING',
+      'SC_CERTIFICATE': 'SC CASTE CERTIFICATE',
+      'ST_CERTIFICATE': 'ST TRIBE CERTIFICATE',
+      'OBC_NCL_CERTIFICATE': 'OBC NCL CERTIFICATE',
+      'EWS_CERTIFICATE': 'EWS INCOME & ASSET CERTIFICATE',
+      'PWD_CERTIFICATE': 'PWD CERTIFICATE',
+      'PASSPORT_AND_VISA': 'PASSPORT & VISA',
+      'PARENT_POSTING_CERTIFICATE': 'PARENT POSTING OUTSIDE NCR'
+    };
+    return labels[dt] || dt.replace(/_/g, ' ');
+  },
+
+  renderStudentDocumentsTable: function (documents, requiredDocs, student) {
+    var tbody = document.getElementById('stu-docs-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    var docMap = {};
+    (documents || []).forEach(function (d) { docMap[d.DocumentType] = d; });
+
+    // Determine category-specific required documents strictly per Hostel Brochure
+    var allTypes = [];
+    if (requiredDocs && requiredDocs.length > 0) {
+      allTypes = requiredDocs.slice();
+    } else {
+      allTypes = ['ADMISSION_FEE_RECEIPT', 'MEDICAL_FITNESS', 'PERMANENT_ADDRESS_PROOF', 'PARENT_UNDERTAKING', 'STUDENT_UNDERTAKING'];
+      if (student) {
+        var cat = String(student.Category || '').toUpperCase().trim();
+        var isPwd = (student.IsPwD === true || student.IsPwD === 'true' || student.IsPwD === 'YES' || cat === 'PWD');
+        var isForeign = (cat === 'FOREIGN' || (student.Nationality && String(student.Nationality).toUpperCase().trim() !== 'INDIAN'));
+        var isParentOutside = (student.IsParentPostedOutsideNCR === true || student.IsParentPostedOutsideNCR === 'true' || student.IsParentPostedOutsideNCR === 'YES');
+        if (isPwd) allTypes.push('PWD_CERTIFICATE');
+        if (cat === 'SC') allTypes.push('SC_CERTIFICATE');
+        if (cat === 'ST') allTypes.push('ST_CERTIFICATE');
+        if (cat === 'OBC') allTypes.push('OBC_NCL_CERTIFICATE');
+        if (cat === 'EWS') allTypes.push('EWS_CERTIFICATE');
+        if (isForeign) allTypes.push('PASSPORT_AND_VISA');
+        if (isParentOutside) allTypes.push('PARENT_POSTING_CERTIFICATE');
+      }
+    }
+
+    var self = this;
+    allTypes.forEach(function (dt) {
+      var doc = docMap[dt];
+      var statusBadge = '<span class="badge badge-secondary">NOT UPLOADED</span>';
+      var actionBtn = '';
+
+      if (doc) {
+        if (doc.VerificationStatus === 'VERIFIED') statusBadge = '<span class="badge badge-success">VERIFIED</span>';
+        else if (doc.VerificationStatus === 'REJECTED') statusBadge = '<span class="badge badge-danger">REJECTED</span>';
+        else statusBadge = '<span class="badge badge-warning">PENDING REVIEW</span>';
+
+        actionBtn = '<a href="' + doc.DriveURL + '" target="_blank" class="btn btn-sm btn-secondary">View File</a>';
+      }
+
+      var uploadInput = '<input type="file" id="upload_' + dt + '" style="display:none;" onchange="App.handleDocumentUpload(this, \'' + dt + '\')">' +
+        '<button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById(\'upload_' + dt + '\').click()">' + (doc ? 'Re-upload' : 'Upload') + '</button>';
+
+      var displayName = self.getDocumentDisplayName(dt);
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><strong>' + displayName + '</strong></td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + (doc ? (doc.Remarks || 'Uploaded') : 'Mandatory') + '</td>' +
+        '<td style="display:flex; gap:8px;">' + actionBtn + uploadInput + '</td>';
+      tbody.appendChild(tr);
+    });
+  },
+
+  handleDocumentUpload: function (inputEl, documentType) {
+    var file = inputEl.files[0];
+    if (!file) return;
+
+    var self = this;
+    if (file.size > 10 * 1024 * 1024) {
+      this.showToast('File size must be under 10MB.', 'warning');
+      return;
+    }
+
+    var reader = new FileReader();
+    this.showLoading('Uploading document to Drive...');
+
+    reader.onload = function (e) {
+      var base64Data = e.target.result;
+      self.callServer('apiUploadDocument', self.token, documentType, base64Data, file.name, file.type)
+        .then(function (result) {
+          self.hideLoading();
+          self.showToast('Document uploaded successfully.', 'success');
+          self.loadStudentDashboard();
+        })
+        .catch(function () {
+          self.hideLoading();
+        });
+    };
+
+    reader.readAsDataURL(file);
+  },
+
+  submitStudentApplication: function () {
+    var self = this;
+    var isNoPref = document.getElementById('app-no-pref') ? document.getElementById('app-no-pref').checked : false;
+
+    var payload = {
+      name: document.getElementById('app-name').value,
+      enrollmentNo: document.getElementById('app-enrollment').value,
+      dateOfBirth: document.getElementById('app-dob').value,
+      gender: document.getElementById('app-gender').value,
+      nationality: document.getElementById('app-nationality').value,
+      programme: document.getElementById('app-programme').value,
+      department: document.getElementById('app-department').value,
+      joiningDate: document.getElementById('app-joining-date').value,
+      category: document.getElementById('app-category').value,
+      regionType: document.getElementById('app-region-type').value,
+      isDelhiNCRResident: document.getElementById('app-ncr-resident').checked,
+      isParentPostedOutsideNCR: document.getElementById('app-parent-posted-outside').checked,
+      isPwD: document.getElementById('app-pwd').checked,
+      studentMobile: document.getElementById('app-mobile').value,
+      parentName: document.getElementById('app-parent-name').value,
+      parentMobile: document.getElementById('app-parent-mobile').value,
+      permanentAddress: document.getElementById('app-address').value,
+      permanentCity: document.getElementById('app-city').value,
+      permanentState: document.getElementById('app-state').value,
+      permanentPincode: document.getElementById('app-pincode').value,
+      localGuardianName: document.getElementById('app-guardian-name').value,
+      localGuardianContact: document.getElementById('app-guardian-contact').value,
+      emergencyContact: document.getElementById('app-emergency-contact').value,
+      firstHostelPref: isNoPref ? '' : document.getElementById('app-pref-1').value,
+      secondHostelPref: isNoPref ? '' : document.getElementById('app-pref-2').value,
+      noPreference: isNoPref
+    };
+
+    if (!payload.name || !payload.enrollmentNo || !payload.gender || !payload.permanentAddress) {
+      this.showToast('Please fill in all mandatory profile and address fields.', 'warning');
+      return;
+    }
+
+    this.showLoading('Submitting hostel application...');
+    this.callServer('apiSubmitApplication', this.token, payload)
+      .then(function (result) {
+        self.hideLoading();
+        self.showToast('Hostel application submitted successfully for ' + result.academicYear, 'success');
+        self.loadStudentDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  // ============================================================
+  // DIGITAL ALLOTMENT LETTER
+  // ============================================================
+
+  openAllotmentLetterModal: function () {
+    var self = this;
+    this.showLoading('Generating allotment letter...');
+    this.callServer('apiGetAllotmentLetter', this.token)
+      .then(function (letter) {
+        self.allotmentLetterData = letter;
+        self.hideLoading();
+        self.renderAllotmentLetter(letter);
+        self.openModal('modal-allotment-letter');
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  renderAllotmentLetter: function (data) {
+    var container = document.getElementById('allotment-letter-body');
+    if (!container) return;
+
+    var paymentStatusBadge = (data.fee.paymentStatus === 'VERIFIED')
+      ? '<span style="color:#059669; font-weight:bold;">VERIFIED (Ref: ' + data.fee.verifiedReference + ')</span>'
+      : '<span style="color:#d97706; font-weight:bold;">' + data.fee.paymentStatus + ' (Pending Verification)</span>';
+
+    container.innerHTML =
+      '<div id="printable-allotment-letter" style="border: 2px solid #1e3a8a; padding: 24px; border-radius: 8px; font-family: Arial, sans-serif; background:#ffffff;">' +
+      '<div style="text-align:center; border-bottom: 2px solid #1e3a8a; padding-bottom: 14px; margin-bottom: 18px;">' +
+      '<h2 style="color:#1e3a8a; margin:0; font-size:22px; text-transform:uppercase; letter-spacing:1px;">HOSTEL 360 - HOSTEL ADMINISTRATION</h2>' +
+      '<p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">Dwarka Campus, Sector 16C, Dwarka, New Delhi 110078</p>' +
+      '<h3 style="margin:12px 0 0 0; font-size:16px; color:#0f172a; text-decoration:underline;">OFFICIAL HOSTEL ROOM ALLOTMENT LETTER</h3>' +
+      '</div>' +
+
+      '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:16px;">' +
+      '<div><strong>Letter Ref No:</strong> ' + data.allotmentLetterNo + '<br><strong>Date of Issue:</strong> ' + data.dateOfIssue + '</div>' +
+      '<div><strong>Academic Session:</strong> ' + data.academicYear + '<br><strong>Allotment Status:</strong> <span style="color:#059669; font-weight:bold;">' + data.allotment.status + '</span></div>' +
+      '</div>' +
+
+      '<table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:16px;">' +
+      '<tr style="background:#f8fafc;"><td style="padding:8px; border:1px solid #cbd5e1; width:30%;"><strong>Student Name</strong></td><td style="padding:8px; border:1px solid #cbd5e1;">' + data.student.name + '</td></tr>' +
+      '<tr><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Enrollment Number</strong></td><td style="padding:8px; border:1px solid #cbd5e1;">' + data.student.enrollmentNo + '</td></tr>' +
+      '<tr style="background:#f8fafc;"><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Programme / School</strong></td><td style="padding:8px; border:1px solid #cbd5e1;">' + data.student.programme + ' (' + data.student.department + ')</td></tr>' +
+      '<tr><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Gender / Quota</strong></td><td style="padding:8px; border:1px solid #cbd5e1;">' + data.student.gender + ' / ' + data.student.category + ' (' + data.student.regionType + ')</td></tr>' +
+      '<tr style="background:#f8fafc;"><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Priority Tier</strong></td><td style="padding:8px; border:1px solid #cbd5e1;">' + data.allotment.priorityGroup + '</td></tr>' +
+      '<tr><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Allotted Hostel</strong></td><td style="padding:8px; border:1px solid #cbd5e1;"><strong>' + data.allotment.hostelName + ' (' + data.allotment.hostelCode + ')</strong></td></tr>' +
+      '<tr style="background:#f8fafc;"><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Allotted Room & Floor</strong></td><td style="padding:8px; border:1px solid #cbd5e1;"><strong style="font-size:15px; color:#1e3a8a;">Room ' + data.allotment.roomNumber + ' (Floor ' + data.allotment.floorNumber + ') - Single Occupancy</strong></td></tr>' +
+      '<tr><td style="padding:8px; border:1px solid #cbd5e1;"><strong>Annual Hostel Fee</strong></td><td style="padding:8px; border:1px solid #cbd5e1;">INR ' + data.fee.annualFee.toLocaleString() + ' • Status: ' + paymentStatusBadge + '</td></tr>' +
+      '</table>' +
+
+      '<div style="background:#f1f5f9; padding:12px; border-left:4px solid #1e3a8a; font-size:12px; margin-bottom:18px;">' +
+      '<strong>Deterministic Allotment Basis:</strong><br>' +
+      data.allotment.explanation +
+      '</div>' +
+
+      '<div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:28px; font-size:12px;">' +
+      '<div>' +
+      '<p style="margin:0; color:#64748b;">Generated securely by HOSTEL 360<br>Verified Institutional Record</p>' +
+      '</div>' +
+      '<div style="text-align:center;">' +
+      '<div style="font-family:\'Courier New\', monospace; font-weight:bold; color:#1e3a8a; letter-spacing:1px; margin-bottom:4px;">[ OFFICIAL DIGITAL SEAL ]</div>' +
+      '<strong>Chief Warden / Administration</strong><br>Hostel 360 University System' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+  },
+
+  printAllotmentLetter: function () {
+    var letterEl = document.getElementById('printable-allotment-letter');
+    if (!letterEl) return;
+
+    var printWin = window.open('', '_blank');
+    printWin.document.write('<html><head><title>Hostel Allotment Letter - ' + (this.allotmentLetterData ? this.allotmentLetterData.student.name : 'Allotment') + '</title>');
+    printWin.document.write('<style>body{font-family:Arial,sans-serif; margin:20px; color:#1e293b;} @media print{body{margin:0;}}</style>');
+    printWin.document.write('</head><body>');
+    printWin.document.write(letterEl.outerHTML);
+    printWin.document.write('</body></html>');
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(function () {
+      printWin.print();
+      printWin.close();
+    }, 300);
+  },
+
+  onPaymentModeChange: function (mode) {
+    var ddContainer = document.getElementById('pay-dd-container');
+    var genericContainer = document.getElementById('pay-generic-container');
+    var ddNumber = document.getElementById('pay-dd-number');
+    var ddBank = document.getElementById('pay-dd-bank');
+    var payRef = document.getElementById('pay-ref');
+
+    if (mode === 'DEMAND_DRAFT') {
+      if (ddContainer) ddContainer.style.display = 'block';
+      if (genericContainer) genericContainer.style.display = 'none';
+      if (ddNumber) ddNumber.required = true;
+      if (ddBank) ddBank.required = true;
+      if (payRef) payRef.required = false;
+    } else {
+      if (ddContainer) ddContainer.style.display = 'none';
+      if (genericContainer) genericContainer.style.display = 'block';
+      if (ddNumber) ddNumber.required = false;
+      if (ddBank) ddBank.required = false;
+      if (payRef) payRef.required = true;
+    }
+  },
+
+  renderStudentPaymentsTable: function (payments, feeAmount) {
+    var tbody = document.getElementById('stu-payments-tbody');
+    tbody.innerHTML = '';
+    document.getElementById('stu-fee-amount-display').textContent = 'INR ' + (feeAmount || 35000).toLocaleString();
+
+    if (!payments || payments.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:18px; color:var(--text-muted);">No payment or Demand Draft recorded yet.</td></tr>';
+      return;
+    }
+
+    (payments || []).forEach(function (p) {
+      var isDD = (p.PaymentMode === 'DEMAND_DRAFT');
+      var badge = '<span class="badge badge-warning">' + (isDD ? '⏳ DD SUBMITTED (PENDING PHYSICAL HANDOVER)' : 'PENDING') + '</span>';
+      if (p.Status === 'VERIFIED') badge = '<span class="badge badge-success">✓ VERIFIED & RECONCILED</span>';
+      else if (p.Status === 'REJECTED') badge = '<span class="badge badge-danger">REJECTED</span>';
+
+      var refDisplay = '<strong>' + p.TransactionReference + '</strong>';
+      if (isDD) {
+        var bankInfo = p.DDBankName ? (p.DDBankName + (p.DDBranchName ? (', ' + p.DDBranchName) : '')) : (p.Remarks || '');
+        refDisplay = '<strong>DD #' + p.TransactionReference + '</strong>' + (bankInfo ? ('<br><small style="color:var(--text-muted);">' + bankInfo + '</small>') : '');
+      }
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + refDisplay + '</td>' +
+        '<td><strong>INR ' + parseFloat(p.Amount).toLocaleString() + '</strong></td>' +
+        '<td><span class="badge badge-info">' + (p.PaymentMode || 'DEMAND_DRAFT').replace(/_/g, ' ') + '</span></td>' +
+        '<td>' + (p.PaymentDate || 'N/A') + '</td>' +
+        '<td>' + badge + '</td>';
+      tbody.appendChild(tr);
+    });
+  },
+
+  submitPaymentRecord: function () {
+    var amount = document.getElementById('pay-amount').value;
+    var mode = document.getElementById('pay-mode').value;
+    var date = document.getElementById('pay-date').value;
+
+    var payload = {
+      amount: amount,
+      paymentMode: mode,
+      paymentDate: date
+    };
+
+    if (mode === 'DEMAND_DRAFT') {
+      var ddNum = (document.getElementById('pay-dd-number').value || '').trim();
+      var ddBank = (document.getElementById('pay-dd-bank').value || '').trim();
+      var ddBranch = (document.getElementById('pay-dd-branch').value || '').trim();
+      var ddPayee = document.getElementById('pay-dd-payee').value || 'Registrar, GGSIP University';
+
+      if (!ddNum || !ddBank) {
+        this.showToast('Please enter Demand Draft number and issuing bank name.', 'warning');
+        return;
+      }
+
+      payload.transactionReference = ddNum;
+      payload.ddBankName = ddBank;
+      payload.ddBranchName = ddBranch;
+      payload.ddInFavorOf = ddPayee;
+    } else {
+      var ref = (document.getElementById('pay-ref').value || '').trim();
+      if (!ref) {
+        this.showToast('Please enter transaction reference / UTR / Challan number.', 'warning');
+        return;
+      }
+      payload.transactionReference = ref;
+    }
+
+    if (!payload.paymentDate) {
+      this.showToast('Please specify instrument / payment date.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Recording ' + (mode === 'DEMAND_DRAFT' ? 'Demand Draft' : 'offline payment') + ' details...');
+    this.callServer('apiSubmitPayment', this.token, payload)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Payment record submitted. Please bring the original DD to the Warden Office for key handover.', 'success', 7000);
+        if (document.getElementById('pay-dd-number')) document.getElementById('pay-dd-number').value = '';
+        if (document.getElementById('pay-dd-bank')) document.getElementById('pay-dd-bank').value = '';
+        if (document.getElementById('pay-dd-branch')) document.getElementById('pay-dd-branch').value = '';
+        if (document.getElementById('pay-ref')) document.getElementById('pay-ref').value = '';
+        self.loadStudentDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  // ============================================================
+  // WARDEN DASHBOARD CONTROLLERS
+  // ============================================================
+
+  seedDemoDatabase: function () {
+    if (!confirm('Seed database with 60 single-occupancy rooms (Shivalik, Aravali, Satpura, Nilgiri) and synthetic demo applicants for full end-to-end testing?')) {
+      return;
+    }
+    var self = this;
+    this.showLoading('Initializing and seeding demo database...');
+    this.callServer('apiSeedDatabase', this.token)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Database seeded successfully with hostels, rooms, and applicants!', 'success', 6000);
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  loadWardenDashboard: function (academicYear) {
+    var self = this;
+    this.showLoading('Loading administrative dashboard...');
+    this.callServer('apiGetWardenDashboard', this.token, academicYear)
+      .then(function (data) {
+        self.wardenData = data;
+        self.hideLoading();
+        self.renderWardenDashboard(data);
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  renderWardenDashboard: function (data) {
+    // 1. KPI Cards
+    var kpis = data.analytics.kpis;
+    document.getElementById('kpi-total-apps').textContent = kpis.totalApplications;
+    document.getElementById('kpi-allocated').textContent = kpis.publishedAllocated;
+    document.getElementById('kpi-waitlisted').textContent = kpis.waitlistCount;
+    document.getElementById('kpi-occupancy').textContent = kpis.occupancyRate + '%';
+    document.getElementById('kpi-avail-rooms').textContent = kpis.availableRooms;
+    document.getElementById('kpi-pending-docs').textContent = kpis.pendingDocsCount;
+
+    // 2. Charts Visualizers
+    this.renderWardenCharts(data.analytics);
+
+    // 3. Applications Table
+    this.renderWardenApplicationsTable(data.applications);
+
+    // 4. Allocations Table
+    this.renderWardenAllocationsTable(data.allocations);
+
+    // 5. Waitlist Table
+    this.renderWardenWaitlistTable(data.waitlist);
+
+    // 6. Hostels & Rooms Config
+    this.renderWardenHostelsConfig(data.hostels, data.rooms);
+
+    // 7. Reservation Quotas Table
+    this.renderWardenReservationRules(data.reservationRules);
+
+    // 8. Priority Rules Table
+    this.renderWardenPriorityRules(data.priorityRules);
+
+    // 9. Payments Table
+    this.renderWardenPaymentsTable(data.payments);
+  },
+
+  switchWardenTab: function (tabName) {
+    var tabs = document.querySelectorAll('.warden-tab');
+    var btns = document.querySelectorAll('.tab-btn');
+    tabs.forEach(function (t) { t.classList.remove('active'); });
+    btns.forEach(function (b) { b.classList.remove('active'); });
+
+    var targetTab = document.getElementById('w-tab-' + tabName);
+    var targetBtn = document.getElementById('btn-tab-' + tabName);
+    if (targetTab) targetTab.classList.add('active');
+    if (targetBtn) targetBtn.classList.add('active');
+
+    if (tabName === 'smriti') {
+      var hist = document.getElementById('smriti-chat-history');
+      if (hist) hist.scrollTop = hist.scrollHeight;
+      var input = document.getElementById('smriti-chat-input');
+      if (input) setTimeout(function () { input.focus(); }, 100);
+    }
+  },
+
+  renderWardenCharts: function (analytics) {
+    // Category Breakdown Chart
+    var catChart = document.getElementById('chart-category-dist');
+    catChart.innerHTML = '';
+    var catDist = analytics.categoryDistribution || {};
+    var maxCat = 1;
+    for (var k in catDist) if (catDist[k] > maxCat) maxCat = catDist[k];
+
+    for (var cat in catDist) {
+      var count = catDist[cat];
+      var pct = Math.round((count / maxCat) * 100);
+      catChart.innerHTML +=
+        '<div class="chart-bar-row">' +
+        '<div class="chart-bar-label">' + cat + '</div>' +
+        '<div class="chart-bar-track"><div class="chart-bar-fill" style="width:' + pct + '%;"></div></div>' +
+        '<div class="chart-bar-val">' + count + '</div>' +
+        '</div>';
+    }
+
+    // Hostel Occupancy Chart
+    var hostChart = document.getElementById('chart-hostel-occupancy');
+    hostChart.innerHTML = '';
+    var hostStats = analytics.hostelStats || [];
+    hostStats.forEach(function (h) {
+      hostChart.innerHTML +=
+        '<div class="chart-bar-row">' +
+        '<div class="chart-bar-label">' + h.name + ' (' + h.code + ')</div>' +
+        '<div class="chart-bar-track"><div class="chart-bar-fill" style="width:' + h.occupancyRate + '%;"></div></div>' +
+        '<div class="chart-bar-val">' + h.occupancyRate + '%</div>' +
+        '</div>';
+    });
+
+    // Priority Group Breakdown
+    var prioChart = document.getElementById('chart-priority-dist');
+    prioChart.innerHTML = '';
+    var prioStats = analytics.priorityGroupStats || {};
+    for (var pg = 1; pg <= 6; pg++) {
+      var key = 'GROUP_' + pg;
+      var st = prioStats[key] || { allocated: 0, waitlisted: 0 };
+      prioChart.innerHTML +=
+        '<div class="chart-bar-row">' +
+        '<div class="chart-bar-label">Group ' + pg + '</div>' +
+        '<div class="chart-bar-track" style="display:flex; background:#e2e8f0;">' +
+        '<div style="background:var(--success); width:' + (st.allocated * 10) + '%; height:100%;"></div>' +
+        '<div style="background:var(--warning); width:' + (st.waitlisted * 10) + '%; height:100%;"></div>' +
+        '</div>' +
+        '<div class="chart-bar-val">' + st.allocated + ' / ' + st.waitlisted + '</div>' +
+        '</div>';
+    }
+  },
+
+  escapeHtml: function (str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  formatMarkdownInline: function (text) {
+    if (!text) return '';
+    // Bold: **text**
+    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Italic: *text* (avoiding double stars)
+    text = text.replace(/(^|[^\*])\*([^\*]+)\*([^\*]|$)/g, '$1<em>$2</em>$3');
+    // Inline code: `text`
+    text = text.replace(/`([^`]+)`/g, '<code class="smriti-md-code">$1</code>');
+    return text;
+  },
+
+  renderMarkdown: function (md) {
+    if (!md) return '';
+    var safe = this.escapeHtml(md);
+
+    var lines = safe.split(/\r?\n/);
+    var out = [];
+    var inUl = false;
+    var inOl = false;
+    var inCode = false;
+    var codeBuf = [];
+    var self = this;
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      // Code blocks ```
+      if (line.trim().indexOf('```') === 0) {
+        if (inCode) {
+          out.push('<pre class="smriti-md-pre"><code>' + codeBuf.join('\n') + '</code></pre>');
+          codeBuf = [];
+          inCode = false;
+        } else {
+          if (inUl) { out.push('</ul>'); inUl = false; }
+          if (inOl) { out.push('</ol>'); inOl = false; }
+          inCode = true;
+        }
+        continue;
+      }
+      if (inCode) {
+        codeBuf.push(line);
+        continue;
+      }
+
+      var ulMatch = line.match(/^(\s*)[*-]\s+(.*)$/);
+      var olMatch = line.match(/^(\s*)\d+\.\s+(.*)$/);
+      var h3Match = line.match(/^###\s+(.*)$/);
+      var h2Match = line.match(/^##\s+(.*)$/);
+      var h1Match = line.match(/^#\s+(.*)$/);
+      var bqMatch = line.match(/^>\s+(.*)$/);
+
+      if (ulMatch) {
+        if (inOl) { out.push('</ol>'); inOl = false; }
+        if (!inUl) { out.push('<ul class="smriti-md-ul">'); inUl = true; }
+        out.push('<li>' + self.formatMarkdownInline(ulMatch[2]) + '</li>');
+        continue;
+      } else if (inUl) {
+        out.push('</ul>');
+        inUl = false;
+      }
+
+      if (olMatch) {
+        if (inUl) { out.push('</ul>'); inUl = false; }
+        if (!inOl) { out.push('<ol class="smriti-md-ol">'); inOl = true; }
+        out.push('<li>' + self.formatMarkdownInline(olMatch[2]) + '</li>');
+        continue;
+      } else if (inOl) {
+        out.push('</ol>');
+        inOl = false;
+      }
+
+      if (bqMatch) {
+        out.push('<blockquote class="smriti-md-blockquote">' + self.formatMarkdownInline(bqMatch[1]) + '</blockquote>');
+      } else if (h3Match) {
+        out.push('<h4 class="smriti-md-h4">' + self.formatMarkdownInline(h3Match[1]) + '</h4>');
+      } else if (h2Match) {
+        out.push('<h3 class="smriti-md-h3">' + self.formatMarkdownInline(h2Match[1]) + '</h3>');
+      } else if (h1Match) {
+        out.push('<h2 class="smriti-md-h2">' + self.formatMarkdownInline(h1Match[1]) + '</h2>');
+      } else if (line.trim() === '---' || line.trim() === '***') {
+        out.push('<hr class="smriti-md-hr"/>');
+      } else if (line.trim() === '') {
+        if (out.length > 0 && out[out.length - 1] !== '<div class="smriti-md-gap"></div>') {
+          out.push('<div class="smriti-md-gap"></div>');
+        }
+      } else {
+        out.push('<p class="smriti-md-p">' + self.formatMarkdownInline(line) + '</p>');
+      }
+    }
+
+    if (inCode) {
+      out.push('<pre class="smriti-md-pre"><code>' + codeBuf.join('\n') + '</code></pre>');
+    }
+    if (inUl) out.push('</ul>');
+    if (inOl) out.push('</ol>');
+
+    return out.join('');
+  },
+
+  renderPaginationBar: function (containerId, currentPage, totalItems, pageSize, onPageChangeName) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (totalItems === 0) {
+      container.innerHTML = '<div class="pagination-info">Showing <strong>0</strong> of <strong>0</strong> entries</div>';
+      return;
+    }
+
+    var totalPages = Math.ceil(totalItems / pageSize) || 1;
+    var startItem = (currentPage - 1) * pageSize + 1;
+    var endItem = Math.min(currentPage * pageSize, totalItems);
+
+    var infoHtml = '<div class="pagination-info">' +
+      'Showing <strong>' + startItem + '</strong> to <strong>' + endItem + '</strong> of <strong>' + totalItems + '</strong> entries' +
+      '</div>';
+
+    var controlsHtml = '<div class="pagination-controls">';
+
+    var prevDisabled = currentPage <= 1 ? 'disabled' : '';
+    controlsHtml += '<button class="page-btn" ' + prevDisabled + ' onclick="' + onPageChangeName + '(' + (currentPage - 1) + ')" title="Previous Page">‹ Prev</button>';
+
+    var pages = [];
+    if (totalPages <= 7) {
+      for (var i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 4) {
+        pages = [1, 2, 3, 4, 5, '...', totalPages];
+      } else if (currentPage >= totalPages - 3) {
+        pages = [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+      } else {
+        pages = [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+      }
+    }
+
+    for (var j = 0; j < pages.length; j++) {
+      var p = pages[j];
+      if (p === '...') {
+        controlsHtml += '<span class="page-ellipsis">…</span>';
+      } else if (p === currentPage) {
+        controlsHtml += '<button class="page-btn active" disabled>' + p + '</button>';
+      } else {
+        controlsHtml += '<button class="page-btn" onclick="' + onPageChangeName + '(' + p + ')">' + p + '</button>';
+      }
+    }
+
+    var nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+    controlsHtml += '<button class="page-btn" ' + nextDisabled + ' onclick="' + onPageChangeName + '(' + (currentPage + 1) + ')" title="Next Page">Next ›</button>';
+
+    controlsHtml += '</div>';
+
+    container.innerHTML = infoHtml + controlsHtml;
+  },
+
+  currentAppsFilter: 'ALL',
+  currentAppsSearch: '',
+  currentAppsPage: 1,
+
+  searchWardenApplications: function (val) {
+    this.currentAppsSearch = val || '';
+    this.currentAppsPage = 1;
+    if (this.wardenData && this.wardenData.applications) {
+      this.renderWardenApplicationsTable(this.wardenData.applications);
+    }
+  },
+
+  setWardenAppsPage: function (page) {
+    this.currentAppsPage = page;
+    if (this.wardenData && this.wardenData.applications) {
+      this.renderWardenApplicationsTable(this.wardenData.applications);
+    }
+  },
+
+  filterWardenApplications: function (filter) {
+    this.currentAppsFilter = filter || 'ALL';
+    this.currentAppsPage = 1;
+    ['ALL', 'MALE', 'FEMALE'].forEach(function (f) {
+      var btn = document.getElementById('subtab-apps-' + f);
+      if (btn) {
+        if (f === filter) btn.classList.add('active');
+        else btn.classList.remove('active');
+      }
+    });
+    if (this.wardenData && this.wardenData.applications) {
+      this.renderWardenApplicationsTable(this.wardenData.applications);
+    }
+  },
+
+  renderWardenApplicationsTable: function (applications) {
+    var tbody = document.getElementById('warden-apps-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    var list = applications || [];
+
+    var allCount = list.length;
+    var maleCount = list.filter(function (a) { return String(a.gender).toUpperCase() === 'MALE'; }).length;
+    var femaleCount = list.filter(function (a) { return String(a.gender).toUpperCase() === 'FEMALE'; }).length;
+
+    var elAll = document.getElementById('count-apps-ALL');
+    var elMale = document.getElementById('count-apps-MALE');
+    var elFem = document.getElementById('count-apps-FEMALE');
+    if (elAll) elAll.textContent = allCount;
+    if (elMale) elMale.textContent = maleCount;
+    if (elFem) elFem.textContent = femaleCount;
+
+    var filtered = list;
+    if (this.currentAppsFilter === 'MALE') {
+      filtered = list.filter(function (a) { return String(a.gender).toUpperCase() === 'MALE'; });
+    } else if (this.currentAppsFilter === 'FEMALE') {
+      filtered = list.filter(function (a) { return String(a.gender).toUpperCase() === 'FEMALE'; });
+    }
+
+    var query = (this.currentAppsSearch || '').trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter(function (a) {
+        var matchStr = [
+          a.applicationId || '',
+          a.name || '',
+          a.enrollmentNo || '',
+          a.studentId || '',
+          a.gender || '',
+          a.category || '',
+          a.priorityGroup || '',
+          a.eligibilityStatus || '',
+          a.distance != null ? a.distance + ' km' : ''
+        ].join(' ').toLowerCase();
+        return matchStr.indexOf(query) !== -1;
+      });
+    }
+
+    var totalItems = filtered.length;
+    var pageSize = 10;
+    var totalPages = Math.ceil(totalItems / pageSize) || 1;
+    if (this.currentAppsPage > totalPages) this.currentAppsPage = totalPages;
+    if (this.currentAppsPage < 1) this.currentAppsPage = 1;
+
+    if (totalItems === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">' +
+        (query ? 'No student applications matching "' + App.escapeHtml(query) + '".' : 'No student applications found for this selection.') +
+        '</td></tr>';
+      this.renderPaginationBar('pagination-apps', 1, 0, pageSize, 'App.setWardenAppsPage');
+      return;
+    }
+
+    var startIndex = (this.currentAppsPage - 1) * pageSize;
+    var pagedList = filtered.slice(startIndex, startIndex + pageSize);
+
+    pagedList.forEach(function (a) {
+      var badge = '<span class="badge badge-warning">PENDING</span>';
+      if (a.eligibilityStatus === 'ELIGIBLE') badge = '<span class="badge badge-success">ELIGIBLE</span>';
+      else if (a.eligibilityStatus === 'INELIGIBLE') badge = '<span class="badge badge-danger">INELIGIBLE</span>';
+
+      var genderText = (String(a.gender).toUpperCase() === 'MALE') ? 'Male' : 'Female';
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><strong>' + a.applicationId + '</strong></td>' +
+        '<td>' + a.name + '<br><small style="color:var(--text-muted);">' + a.enrollmentNo + '</small></td>' +
+        '<td>' + genderText + '</td>' +
+        '<td>' + a.category + '</td>' +
+        '<td>' + a.priorityGroup + '</td>' +
+        '<td>' + Math.round(a.distance) + ' km</td>' +
+        '<td>' + badge + '</td>' +
+        '<td><button class="btn btn-sm btn-secondary" onclick="App.openVerifyDocsModal(\'' + a.applicationId + '\')">Docs (' + a.documentsCount + ')</button></td>';
+      tbody.appendChild(tr);
+    });
+
+    this.renderPaginationBar('pagination-apps', this.currentAppsPage, totalItems, pageSize, 'App.setWardenAppsPage');
+  },
+
+  currentAllocFilter: 'ALL',
+  currentAllocSearch: '',
+  currentAllocPage: 1,
+
+  searchWardenAllocations: function (val) {
+    this.currentAllocSearch = val || '';
+    this.currentAllocPage = 1;
+    if (this.wardenData && this.wardenData.allocations) {
+      this.renderWardenAllocationsTable(this.wardenData.allocations);
+    }
+  },
+
+  setWardenAllocPage: function (page) {
+    this.currentAllocPage = page;
+    if (this.wardenData && this.wardenData.allocations) {
+      this.renderWardenAllocationsTable(this.wardenData.allocations);
+    }
+  },
+
+  filterWardenAllocations: function (filter) {
+    this.currentAllocFilter = filter || 'ALL';
+    this.currentAllocPage = 1;
+    ['ALL', 'MALE', 'FEMALE'].forEach(function (f) {
+      var btn = document.getElementById('subtab-alloc-' + f);
+      if (btn) {
+        if (f === filter) btn.classList.add('active');
+        else btn.classList.remove('active');
+      }
+    });
+    if (this.wardenData && this.wardenData.allocations) {
+      this.renderWardenAllocationsTable(this.wardenData.allocations);
+    }
+  },
+
+  renderWardenAllocationsTable: function (allocations) {
+    var tbody = document.getElementById('warden-alloc-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    var list = allocations || [];
+
+    var allCount = list.length;
+    var maleCount = list.filter(function (al) {
+      return String(al.gender).toUpperCase() === 'MALE' || String(al.hostelName).indexOf('BH') !== -1 || String(al.hostelName).indexOf('Boys') !== -1 || String(al.hostelId).indexOf('BH') !== -1;
+    }).length;
+    var femaleCount = list.filter(function (al) {
+      return String(al.gender).toUpperCase() === 'FEMALE' || String(al.hostelName).indexOf('GH') !== -1 || String(al.hostelName).indexOf('Girls') !== -1 || String(al.hostelId).indexOf('GH') !== -1;
+    }).length;
+
+    var elAll = document.getElementById('count-alloc-ALL');
+    var elMale = document.getElementById('count-alloc-MALE');
+    var elFem = document.getElementById('count-alloc-FEMALE');
+    if (elAll) elAll.textContent = allCount;
+    if (elMale) elMale.textContent = maleCount;
+    if (elFem) elFem.textContent = femaleCount;
+
+    var filtered = list;
+    if (this.currentAllocFilter === 'MALE') {
+      filtered = list.filter(function (al) {
+        return String(al.gender).toUpperCase() === 'MALE' || String(al.hostelName).indexOf('BH') !== -1 || String(al.hostelName).indexOf('Boys') !== -1 || String(al.hostelId).indexOf('BH') !== -1;
+      });
+    } else if (this.currentAllocFilter === 'FEMALE') {
+      filtered = list.filter(function (al) {
+        return String(al.gender).toUpperCase() === 'FEMALE' || String(al.hostelName).indexOf('GH') !== -1 || String(al.hostelName).indexOf('Girls') !== -1 || String(al.hostelId).indexOf('GH') !== -1;
+      });
+    }
+
+    var query = (this.currentAllocSearch || '').trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter(function (al) {
+        var matchStr = [
+          al.allocationId || '',
+          al.studentName || '',
+          al.studentId || '',
+          al.hostelName || '',
+          al.hostelId || '',
+          'room ' + (al.roomNumber || ''),
+          al.roomNumber || '',
+          al.priorityGroup || '',
+          al.category || '',
+          al.status || '',
+          al.registrationStatus || '',
+          al.gender || ''
+        ].join(' ').toLowerCase();
+        return matchStr.indexOf(query) !== -1;
+      });
+    }
+
+    var totalItems = filtered.length;
+    var pageSize = 10;
+    var totalPages = Math.ceil(totalItems / pageSize) || 1;
+    if (this.currentAllocPage > totalPages) this.currentAllocPage = totalPages;
+    if (this.currentAllocPage < 1) this.currentAllocPage = 1;
+
+    if (totalItems === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">' +
+        (query ? 'No room allotments matching "' + App.escapeHtml(query) + '".' : 'No room allotments found for this selection.') +
+        '</td></tr>';
+      this.renderPaginationBar('pagination-alloc', 1, 0, pageSize, 'App.setWardenAllocPage');
+      return;
+    }
+
+    var startIndex = (this.currentAllocPage - 1) * pageSize;
+    var pagedList = filtered.slice(startIndex, startIndex + pageSize);
+
+    pagedList.forEach(function (al) {
+      var badge = '<span class="badge badge-info">' + al.status + '</span>';
+      if (al.status === 'PUBLISHED') badge = '<span class="badge badge-success">PUBLISHED</span>';
+      else if (al.status === 'CANCELLED') badge = '<span class="badge badge-danger">CANCELLED</span>';
+      else if (al.status === 'LAPSED_UNREPORTED') badge = '<span class="badge badge-danger">LAPSED (UNREPORTED)</span>';
+      else if (al.status === 'REVIEW') badge = '<span class="badge badge-warning">REVIEW</span>';
+
+      if (al.status === 'PUBLISHED' && al.isOverdue && !al.hasVerifiedPayment && al.registrationStatus !== 'COMPLETED') {
+        badge += ' <span class="badge badge-danger" style="margin-top:3px; display:inline-block;">🔴 OVERDUE</span>';
+      }
+
+      var overrideBadge = al.isOverride ? '<span class="badge badge-warning">OVERRIDE</span>' : '';
+
+      var regStatus = '';
+      if (al.status === 'PUBLISHED') {
+        if (al.registrationStatus === 'COMPLETED') {
+          regStatus = '<span class="badge badge-success">✓ CHECKED-IN</span>';
+        } else {
+          regStatus = '<button class="btn btn-sm btn-outline-success" onclick="App.markPhysicalRegistration(\'' + al.allocationId + '\', \'' + (al.studentName || 'Student').replace(/'/g, "\\'") + '\')">🔑 Check-In / Key</button>';
+        }
+      } else if (al.status === 'CANCELLED' || al.status === 'LAPSED_UNREPORTED') {
+        regStatus = '<span class="badge badge-danger">VACATED</span>';
+      } else {
+        regStatus = '<span class="badge badge-secondary">PENDING</span>';
+      }
+
+      var genderText = (String(al.gender).toUpperCase() === 'MALE') ? 'Male' : 'Female';
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><strong>' + al.allocationId + '</strong> ' + overrideBadge + '</td>' +
+        '<td><strong>' + al.studentName + '</strong> <small style="color:var(--text-muted);">(' + genderText + ')</small><br><small style="color:var(--text-muted);">' + al.studentId + '</small></td>' +
+        '<td>' + al.hostelName + '</td>' +
+        '<td>' + (al.status === 'CANCELLED' ? '<span style="color:var(--danger); text-decoration:line-through;">Room ' + al.roomNumber + '</span>' : ('<strong>Room ' + al.roomNumber + '</strong> (Fl ' + al.floorNumber + ')')) + '</td>' +
+        '<td>' + al.priorityGroup + '</td>' +
+        '<td>' + al.category + '</td>' +
+        '<td>' + badge + '</td>' +
+        '<td>' + regStatus + '</td>' +
+        '<td><button class="btn btn-sm btn-secondary" onclick="App.openOverrideModal(\'' + al.allocationId + '\', \'' + al.hostelId + '\')">Override</button></td>';
+      tbody.appendChild(tr);
+    });
+
+    this.renderPaginationBar('pagination-alloc', this.currentAllocPage, totalItems, pageSize, 'App.setWardenAllocPage');
+  },
+
+  currentWaitlistFilter: 'ALL',
+  currentWaitlistSearch: '',
+  currentWaitlistPage: 1,
+
+  searchWardenWaitlist: function (val) {
+    this.currentWaitlistSearch = val || '';
+    this.currentWaitlistPage = 1;
+    if (this.wardenData && this.wardenData.waitlist) {
+      this.renderWardenWaitlistTable(this.wardenData.waitlist);
+    }
+  },
+
+  setWardenWaitlistPage: function (page) {
+    this.currentWaitlistPage = page;
+    if (this.wardenData && this.wardenData.waitlist) {
+      this.renderWardenWaitlistTable(this.wardenData.waitlist);
+    }
+  },
+
+  filterWardenWaitlist: function (filter) {
+    this.currentWaitlistFilter = filter || 'ALL';
+    this.currentWaitlistPage = 1;
+    ['ALL', 'MALE', 'FEMALE'].forEach(function (f) {
+      var btn = document.getElementById('subtab-waitlist-' + f);
+      if (btn) {
+        if (f === filter) btn.classList.add('active');
+        else btn.classList.remove('active');
+      }
+    });
+    if (this.wardenData && this.wardenData.waitlist) {
+      this.renderWardenWaitlistTable(this.wardenData.waitlist);
+    }
+  },
+
+  renderWardenWaitlistTable: function (waitlist) {
+    var tbody = document.getElementById('warden-waitlist-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    var list = waitlist || [];
+
+    var allCount = list.length;
+    var maleCount = list.filter(function (w) { return String(w.gender).toUpperCase() === 'MALE'; }).length;
+    var femaleCount = list.filter(function (w) { return String(w.gender).toUpperCase() === 'FEMALE'; }).length;
+
+    var elAll = document.getElementById('count-waitlist-ALL');
+    var elMale = document.getElementById('count-waitlist-MALE');
+    var elFem = document.getElementById('count-waitlist-FEMALE');
+    if (elAll) elAll.textContent = allCount;
+    if (elMale) elMale.textContent = maleCount;
+    if (elFem) elFem.textContent = femaleCount;
+
+    var filtered = list;
+    if (this.currentWaitlistFilter === 'MALE') {
+      filtered = list.filter(function (w) { return String(w.gender).toUpperCase() === 'MALE'; });
+    } else if (this.currentWaitlistFilter === 'FEMALE') {
+      filtered = list.filter(function (w) { return String(w.gender).toUpperCase() === 'FEMALE'; });
+    }
+
+    var query = (this.currentWaitlistSearch || '').trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter(function (w) {
+        var matchStr = [
+          w.waitlistId || '',
+          w.studentName || '',
+          w.studentId || '',
+          '#' + (w.position || ''),
+          w.gender || '',
+          w.category || '',
+          w.priorityGroup || '',
+          w.distance != null ? w.distance + ' km' : '',
+          w.reason || ''
+        ].join(' ').toLowerCase();
+        return matchStr.indexOf(query) !== -1;
+      });
+    }
+
+    var totalItems = filtered.length;
+    var pageSize = 10;
+    var totalPages = Math.ceil(totalItems / pageSize) || 1;
+    if (this.currentWaitlistPage > totalPages) this.currentWaitlistPage = totalPages;
+    if (this.currentWaitlistPage < 1) this.currentWaitlistPage = 1;
+
+    if (totalItems === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">' +
+        (query ? 'No waitlisted students matching "' + App.escapeHtml(query) + '".' : 'No waitlisted students found for this selection.') +
+        '</td></tr>';
+      this.renderPaginationBar('pagination-waitlist', 1, 0, pageSize, 'App.setWardenWaitlistPage');
+      return;
+    }
+
+    var startIndex = (this.currentWaitlistPage - 1) * pageSize;
+    var pagedList = filtered.slice(startIndex, startIndex + pageSize);
+
+    pagedList.forEach(function (w, index) {
+      var genderText = (String(w.gender).toUpperCase() === 'MALE') ? 'Male' : 'Female';
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><strong>#' + (w.position || (startIndex + index + 1)) + '</strong></td>' +
+        '<td>' + w.waitlistId + '</td>' +
+        '<td><strong>' + w.studentName + '</strong></td>' +
+        '<td>' + genderText + '</td>' +
+        '<td>' + w.category + '</td>' +
+        '<td>' + w.priorityGroup + '</td>' +
+        '<td>' + Math.round(w.distance) + ' km</td>' +
+        '<td><small>' + w.reason + '</small></td>';
+      tbody.appendChild(tr);
+    });
+
+    this.renderPaginationBar('pagination-waitlist', this.currentWaitlistPage, totalItems, pageSize, 'App.setWardenWaitlistPage');
+  },
+
+  renderWardenHostelsConfig: function (hostels, rooms) {
+    var container = document.getElementById('warden-hostels-list');
+    container.innerHTML = '';
+    var allocations = (this.wardenData && this.wardenData.allocations) ? this.wardenData.allocations : [];
+
+    (hostels || []).forEach(function (h) {
+      var hRooms = (rooms || []).filter(function (r) { return r.HostelID === h.HostelID; });
+      var availCount = hRooms.filter(function (r) { return r.OccupancyStatus === 'AVAILABLE'; }).length;
+      var residents = allocations.filter(function (al) { return al.hostelId === h.HostelID && al.status !== 'CANCELLED' && al.status !== 'LAPSED_UNREPORTED'; });
+      var safeName = (h.Name || 'Hostel').replace(/'/g, "\\'");
+
+      container.innerHTML +=
+        '<div class="card" style="margin-bottom:16px;">' +
+        '<div class="card-header" style="flex-wrap:wrap; gap:8px;">' +
+        '<div class="card-title">' + h.Name + ' (' + h.Code + ' • ' + h.Gender + ')</div>' +
+        '<span class="badge badge-' + (h.Status === 'ACTIVE' ? 'success' : 'secondary') + '">' + h.Status + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">' +
+        'Total Single Rooms: <strong>' + hRooms.length + '</strong> | Available: <strong>' + availCount + '</strong> | Occupants: <strong>' + residents.length + '</strong> | Floors: <strong>' + h.TotalFloors + '</strong>' +
+        '</div>' +
+        '<div style="display:flex; gap:8px; flex-wrap:wrap;">' +
+        '<button class="btn btn-sm btn-primary" onclick="App.openHostelResidentsModal(\'' + h.HostelID + '\', \'' + safeName + '\')">👥 View Residents (' + residents.length + ' Occupants)</button>' +
+        '<button class="btn btn-sm btn-secondary" onclick="App.openAddRoomModal(\'' + h.HostelID + '\', \'' + safeName + '\')">+ Add Single Room</button>' +
+        '</div>' +
+        '</div>';
+    });
+  },
+
+  currentReservationRules: [],
+  currentPriorityRules: [],
+
+  renderWardenReservationRules: function (rules) {
+    var tbody = document.getElementById('warden-reservations-tbody');
+    tbody.innerHTML = '';
+    this.currentReservationRules = rules || [];
+    var self = this;
+
+    (rules || []).forEach(function (r, index) {
+      var isGeneral = (String(r.Category).toUpperCase() === 'GENERAL');
+      var statusBadge = (r.Status === 'ACTIVE' || !r.Status) ? '<span class="badge badge-success">ACTIVE</span>' : '<span class="badge badge-secondary">INACTIVE</span>';
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><strong>' + r.Category + '</strong> ' + (isGeneral ? '<span class="badge badge-info" style="margin-left:4px;">Open Pool</span>' : '') + '</td>' +
+        '<td><div style="display:flex; align-items:center; gap:4px;"><input type="number" id="res-pct-' + r.RuleID + '" class="form-control form-control-sm" value="' + (r.Percentage || 0) + '" step="0.1" min="0" max="100" style="width:85px;"><span>%</span></div></td>' +
+        '<td><strong>' + (r.SeatCount || 0) + '</strong></td>' +
+        '<td>' + (r.UsedSeats || 0) + '</td>' +
+        '<td><span class="badge ' + (r.RemainingSeats > 0 ? 'badge-warning' : 'badge-secondary') + '">' + (r.RemainingSeats || 0) + '</span></td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td><div style="display:flex; gap:6px; flex-wrap:wrap;">' +
+        (r.RemainingSeats > 0 && !isGeneral ? '<button class="btn btn-sm btn-outline-warning" onclick="App.openReleaseSeatsModal(\'' + r.Category + '\', ' + r.RemainingSeats + ')">Release Vacant</button>' : '') +
+        '<button class="btn btn-sm btn-secondary" onclick="App.openEditReservationCategoryModal(\'' + r.RuleID + '\', \'' + r.Category + '\', ' + r.Percentage + ', \'' + (r.Status || 'ACTIVE') + '\')">✏️ Edit</button>' +
+        (!isGeneral ? '<button class="btn btn-sm btn-outline-danger" onclick="App.deleteReservationCategory(\'' + r.RuleID + '\', \'' + r.Category + '\')">🗑️</button>' : '') +
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+  },
+
+  renderWardenPriorityRules: function (rules) {
+    var tbody = document.getElementById('warden-priority-tbody');
+    tbody.innerHTML = '';
+    this.currentPriorityRules = (rules || []).sort(function (a, b) { return (parseInt(a.OrderRank, 10) || 0) - (parseInt(b.OrderRank, 10) || 0); });
+    var self = this;
+
+    this.currentPriorityRules.forEach(function (r, index) {
+      var statusBadge = (r.Status === 'ACTIVE' || !r.Status) ? '<span class="badge badge-success">ACTIVE</span>' : '<span class="badge badge-secondary">INACTIVE</span>';
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><span class="badge badge-primary" style="font-size:13px; font-weight:700;">Rank #' + r.OrderRank + '</span></td>' +
+        '<td><code>' + r.PriorityGroup + '</code></td>' +
+        '<td><strong>' + r.GroupName + '</strong></td>' +
+        '<td><small style="color:var(--text-muted);">' + (r.Description || 'No description') + '</small></td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td><div style="display:flex; gap:6px; flex-wrap:wrap;">' +
+        (index > 0 ? '<button class="btn btn-sm btn-secondary" title="Move Up" onclick="App.movePriorityRuleUp(' + index + ')">⬆️</button>' : '<button class="btn btn-sm btn-secondary" disabled style="opacity:0.3;">⬆️</button>') +
+        (index < self.currentPriorityRules.length - 1 ? '<button class="btn btn-sm btn-secondary" title="Move Down" onclick="App.movePriorityRuleDown(' + index + ')">⬇️</button>' : '<button class="btn btn-sm btn-secondary" disabled style="opacity:0.3;">⬇️</button>') +
+        '<button class="btn btn-sm btn-secondary" onclick="App.openEditPriorityTierModal(\'' + r.RuleID + '\', \'' + r.PriorityGroup + '\', \'' + (r.GroupName || '').replace(/'/g, "\\'") + '\', \'' + (r.Description || '').replace(/'/g, "\\'").replace(/\n/g, ' ') + '\', ' + r.OrderRank + ', \'' + (r.Status || 'ACTIVE') + '\')">✏️ Edit</button>' +
+        '<button class="btn btn-sm btn-outline-danger" onclick="App.deletePriorityTier(\'' + r.RuleID + '\', \'' + r.PriorityGroup + '\')">🗑️</button>' +
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+  },
+
+  pendingPaymentVerifications: {},
+
+  renderWardenPaymentsTable: function (payments) {
+    var tbody = document.getElementById('warden-payments-tbody');
+    tbody.innerHTML = '';
+    this.pendingPaymentVerifications = {};
+    var self = this;
+
+    if (!payments || payments.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">No payment receipts submitted for reconciliation.</td></tr>';
+      return;
+    }
+
+    payments.forEach(function (p) {
+      self.pendingPaymentVerifications[p.PaymentID] = {
+        paymentId: p.PaymentID,
+        status: p.Status || 'PENDING',
+        remarks: p.Remarks || ''
+      };
+
+      var isVerified = (p.Status === 'VERIFIED');
+      var isRejected = (p.Status === 'REJECTED');
+      var isDD = (p.PaymentMode === 'DEMAND_DRAFT');
+
+      var refDisplay = '<strong>' + p.TransactionReference + '</strong>';
+      if (isDD) {
+        var bankInfo = p.DDBankName ? (p.DDBankName + (p.DDBranchName ? (', ' + p.DDBranchName) : '')) : (p.Remarks || '');
+        refDisplay = '<strong>DD #' + p.TransactionReference + '</strong>' + (bankInfo ? ('<br><small style="color:var(--text-muted);">' + bankInfo + '</small>') : '');
+      }
+
+      var tr = document.createElement('tr');
+      tr.id = 'pay-row-' + p.PaymentID;
+      tr.innerHTML =
+        '<td>' + refDisplay + '</td>' +
+        '<td>' + (p.StudentName || 'Student') + '<br><small style="color:var(--text-muted);">' + (p.EnrollmentNo || p.StudentID) + '</small></td>' +
+        '<td><span class="badge badge-info">' + (p.AllocatedRoom || 'Allocated') + '</span></td>' +
+        '<td><strong>INR ' + parseFloat(p.Amount || 0).toLocaleString() + '</strong></td>' +
+        '<td><span class="badge ' + (isDD ? 'badge-primary' : 'badge-secondary') + '">' + (p.PaymentMode || 'DEMAND_DRAFT').replace(/_/g, ' ') + '</span></td>' +
+        '<td>' + (p.PaymentDate || 'N/A') + '</td>' +
+        '<td><span id="pay-badge-' + p.PaymentID + '" class="badge ' + (isVerified ? 'badge-success' : (isRejected ? 'badge-danger' : 'badge-warning')) + '">' + (isDD && !isVerified && !isRejected ? 'DD AWAITING HANDOVER' : p.Status) + '</span></td>' +
+        '<td><div style="display:flex; gap:6px;">' +
+        '<button type="button" id="btn-pay-verify-' + p.PaymentID + '" class="btn btn-sm ' + (isVerified ? 'btn-success' : 'btn-secondary') + '" onclick="App.setSinglePaymentStatus(\'' + p.PaymentID + '\', \'VERIFIED\')">' + (isDD ? '✓ Verify DD' : 'Verify') + '</button>' +
+        '<button type="button" id="btn-pay-reject-' + p.PaymentID + '" class="btn btn-sm ' + (isRejected ? 'btn-danger' : 'btn-secondary') + '" onclick="App.setSinglePaymentStatus(\'' + p.PaymentID + '\', \'REJECTED\')">Reject</button>' +
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+  },
+
+  setSinglePaymentStatus: function (paymentId, status) {
+    if (!this.pendingPaymentVerifications[paymentId]) {
+      this.pendingPaymentVerifications[paymentId] = { paymentId: paymentId };
+    }
+    this.pendingPaymentVerifications[paymentId].status = status;
+
+    // Update UI badge
+    var badge = document.getElementById('pay-badge-' + paymentId);
+    if (badge) {
+      badge.className = 'badge ' + (status === 'VERIFIED' ? 'badge-success' : (status === 'REJECTED' ? 'badge-danger' : 'badge-warning'));
+      badge.textContent = status;
+    }
+
+    // Update Buttons styling
+    var btnVerify = document.getElementById('btn-pay-verify-' + paymentId);
+    var btnReject = document.getElementById('btn-pay-reject-' + paymentId);
+    if (btnVerify && btnReject) {
+      if (status === 'VERIFIED') {
+        btnVerify.className = 'btn btn-sm btn-success';
+        btnReject.className = 'btn btn-sm btn-secondary';
+      } else if (status === 'REJECTED') {
+        btnVerify.className = 'btn btn-sm btn-secondary';
+        btnReject.className = 'btn btn-sm btn-danger';
+      }
+    }
+  },
+
+  setAllPaymentStatuses: function (status) {
+    var self = this;
+    for (var payId in this.pendingPaymentVerifications) {
+      self.setSinglePaymentStatus(payId, status);
+    }
+  },
+
+  saveAllPaymentVerifications: function () {
+    var verifications = [];
+    for (var payId in this.pendingPaymentVerifications) {
+      verifications.push(this.pendingPaymentVerifications[payId]);
+    }
+
+    if (verifications.length === 0) {
+      this.showToast('No payment records to update.', 'info');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Saving payment reconciliation statuses...');
+    this.callServer('apiVerifyPaymentsBatch', this.token, verifications)
+      .then(function () {
+        self.hideLoading();
+        self.showToast('All payment reconciliation statuses updated successfully.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  // ============================================================
+  // WARDEN ACTIONS: ALLOCATION, PUBLISH, OVERRIDES
+  // ============================================================
+
+  runAllocation: function () {
+    var self = this;
+    if (!confirm('Run deterministic multi-tier allocation engine in DRAFT mode?')) return;
+
+    this.showLoading('Executing allocation engine...');
+    this.callServer('apiRunAllocation', this.token, null)
+      .then(function (result) {
+        self.hideLoading();
+        var msg = 'Allocations generated in DRAFT mode!\nAllocated: ' + result.totalAllocated + ' | Waitlisted: ' + result.totalWaitlisted;
+        if (!result.validation.valid) {
+          msg += '\n\nValidation Warnings/Errors:\n' + result.validation.errors.join('\n');
+        }
+        alert(msg);
+        self.loadWardenDashboard();
+        self.switchWardenTab('allocations');
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  validateAllocations: function () {
+    var self = this;
+    this.showLoading('Auditing allocations...');
+    this.callServer('apiValidateAllocations', this.token, null)
+      .then(function (res) {
+        self.hideLoading();
+        if (res.valid) {
+          alert('✅ Allocation Validator Passed!\nZero constraint violations detected across ' + res.stats.totalAllocationsValidated + ' records.');
+        } else {
+          alert('❌ Validation Failed!\nErrors:\n' + res.errors.join('\n'));
+        }
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  publishAllocations: function () {
+    var self = this;
+    if (!confirm('Are you sure you want to PUBLISH allocations?\n\nThis will lock room assignments, update student dashboards, and dispatch official email notifications.')) return;
+
+    this.showLoading('Publishing allocations and dispatching notifications...');
+    this.callServer('apiPublishAllocations', this.token, null)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Allocations published successfully! ' + res.publishedAllocationsCount + ' students allotted.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  reopenAllocations: function () {
+    var reason = prompt('Please enter justification for reopening published allocations:');
+    if (!reason || reason.trim().length < 5) {
+      this.showToast('A valid reason is required to reopen allocations.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Reopening allocations to REVIEW mode...');
+    this.callServer('apiReopenAllocations', this.token, null, reason)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Allocations reopened for review.', 'info');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  openOverrideModal: function (allocId, currentHostelId) {
+    document.getElementById('override-alloc-id').value = allocId;
+
+    var alloc = (this.wardenData.allocations || []).filter(function (a) { return a.allocationId === allocId; })[0];
+    var studentNameEl = document.getElementById('override-student-name');
+    var currentRoomEl = document.getElementById('override-current-room');
+    if (studentNameEl && alloc) {
+      studentNameEl.textContent = alloc.studentName + ' (' + alloc.studentId + ')';
+    }
+    if (currentRoomEl && alloc) {
+      currentRoomEl.textContent = 'Current: ' + alloc.hostelName + ' - Room ' + alloc.roomNumber + ' (Floor ' + alloc.floorNumber + ')';
+    }
+
+    // Reset action type to REASSIGN
+    var radios = document.getElementsByName('override-action-type');
+    for (var i = 0; i < radios.length; i++) {
+      radios[i].checked = (radios[i].value === 'REASSIGN');
+    }
+    this.onOverrideActionChange('REASSIGN');
+
+    var hostSelect = document.getElementById('override-hostel-select');
+    hostSelect.innerHTML = '<option value="">-- Select Target Hostel --</option>';
+
+    var hostels = this.wardenData.hostels || [];
+    var allocGender = alloc ? alloc.gender : '';
+    hostels.forEach(function (h) {
+      if (!allocGender || (allocGender === 'MALE' && h.Gender === 'BOYS') || (allocGender === 'FEMALE' && h.Gender === 'GIRLS') || (h.Gender === allocGender)) {
+        hostSelect.innerHTML += '<option value="' + h.HostelID + '">' + h.Name + ' (' + h.Code + ' - ' + h.Gender + ')</option>';
+      }
+    });
+
+    hostSelect.value = currentHostelId;
+    this.updateOverrideRoomsList(currentHostelId);
+    document.getElementById('override-reason').value = '';
+    this.loadSmritiOverridePrecedents(alloc, currentHostelId);
+    this.openModal('modal-override');
+  },
+
+  loadSmritiOverridePrecedents: function (alloc, currentHostelId) {
+    var container = document.getElementById('smriti-override-cases');
+    if (!container) return;
+    container.innerHTML = '<div style="display:flex; align-items:center; gap:8px;"><span class="spinner" style="width:14px; height:14px; border-width:2px;"></span> Recalling historical precedents...</div>';
+
+    var ctx = {
+      category: alloc ? alloc.category : '',
+      priorityGroup: alloc ? alloc.priorityGroup : '',
+      toHostel: currentHostelId || (alloc ? alloc.hostelId : '')
+    };
+
+    this.callServer('apiSmritiSuggestForOverride', this.token, ctx)
+      .then(function (res) {
+        if (!res || !res.cases || !res.cases.length) {
+          container.innerHTML = '<div style="color:var(--text-muted); font-style:italic;">' +
+            ((res && res.notice) ? res.notice : 'No matching historical override precedents found in institutional memory.') +
+            '</div>';
+          return;
+        }
+
+        var html = '';
+        res.cases.forEach(function (c) {
+          html += '<div class="smriti-case-item">⚖️ ' + App.renderMarkdown(c.content) + '</div>';
+        });
+        container.innerHTML = html;
+      })
+      .catch(function () {
+        container.innerHTML = '<div style="color:var(--text-muted); font-style:italic;">Smriti advisory memory is currently offline.</div>';
+      });
+  },
+
+  onOverrideActionChange: function (actionType) {
+    var reassignFields = document.getElementById('override-reassign-fields');
+    var cancelWarning = document.getElementById('override-cancel-warning');
+    var submitBtn = document.getElementById('btn-submit-override');
+    var modalTitle = document.getElementById('override-modal-title');
+
+    if (actionType === 'CANCEL') {
+      if (reassignFields) reassignFields.style.display = 'none';
+      if (cancelWarning) cancelWarning.style.display = 'block';
+      if (modalTitle) modalTitle.textContent = 'Revoke & Cancel Room Allocation';
+      if (submitBtn) {
+        submitBtn.textContent = '🚫 Confirm & Revoke Allocation';
+        submitBtn.className = 'btn btn-danger';
+      }
+    } else {
+      if (reassignFields) reassignFields.style.display = 'block';
+      if (cancelWarning) cancelWarning.style.display = 'none';
+      if (modalTitle) modalTitle.textContent = 'Manual Allocation Override';
+      if (submitBtn) {
+        submitBtn.textContent = 'Confirm & Apply Reassignment';
+        submitBtn.className = 'btn btn-primary';
+      }
+    }
+  },
+
+  updateOverrideRoomsList: function (hostelId) {
+    var roomSelect = document.getElementById('override-room-select');
+    roomSelect.innerHTML = '<option value="">-- Select Target Room --</option>';
+    var rooms = this.wardenData.rooms || [];
+    var avail = rooms.filter(function (r) { return r.HostelID === hostelId && r.OccupancyStatus === 'AVAILABLE'; });
+
+    avail.forEach(function (r) {
+      roomSelect.innerHTML += '<option value="' + r.RoomID + '">Room ' + r.RoomNumber + ' (Floor ' + r.FloorNumber + ')</option>';
+    });
+  },
+
+  submitManualOverride: function () {
+    var allocId = document.getElementById('override-alloc-id').value;
+    var reason = (document.getElementById('override-reason').value || '').trim();
+
+    var actionType = 'REASSIGN';
+    var radios = document.getElementsByName('override-action-type');
+    for (var i = 0; i < radios.length; i++) {
+      if (radios[i].checked) {
+        actionType = radios[i].value;
+        break;
+      }
+    }
+
+    if (!reason || reason.length < 5) {
+      this.showToast('Please specify a valid administrative justification reason (min 5 chars).', 'warning');
+      return;
+    }
+
+    var self = this;
+
+    if (actionType === 'CANCEL') {
+      if (!confirm('Are you sure you want to officially CANCEL and REVOKE this candidate\'s room allotment? This will immediately free up their room.')) {
+        return;
+      }
+
+      this.showLoading('Cancelling room allocation...');
+      this.callServer('apiCancelAllocation', this.token, {
+        allocationId: allocId,
+        reason: reason
+      })
+        .then(function (res) {
+          self.hideLoading();
+          self.closeModal('modal-override');
+          self.showToast('Allocation revoked successfully. Room is now available.', 'success');
+          self.loadWardenDashboard();
+        })
+        .catch(function () {
+          self.hideLoading();
+        });
+      return;
+    }
+
+    // Otherwise REASSIGN
+    var hostelId = document.getElementById('override-hostel-select').value;
+    var roomId = document.getElementById('override-room-select').value;
+
+    if (!hostelId || !roomId) {
+      this.showToast('Please select target hostel and available room.', 'warning');
+      return;
+    }
+
+    this.showLoading('Applying manual room reassignment...');
+    this.callServer('apiOverrideAllocation', this.token, {
+      allocationId: allocId,
+      newHostelId: hostelId,
+      newRoomId: roomId,
+      reason: reason
+    })
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-override');
+        self.showToast('Allocation reallocated successfully to Room ' + res.newRoom, 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  markPhysicalRegistration: function (allocationId, studentName) {
+    if (!confirm('Confirm offline physical registration and room key handover for ' + studentName + '?\n\nThis will officially complete the registration lifecycle.')) {
+      return;
+    }
+    var self = this;
+    this.showLoading('Confirming physical registration & key handover...');
+    this.callServer('apiUpdateRegistrationStatus', this.token, allocationId, 'COMPLETED', 'Offline physical registration & room possession verified by Warden')
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Physical registration confirmed for ' + studentName + '! Key handover complete.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  lapseUnreportedAllocations: function () {
+    if (!confirm('Run automated sweep to lapse all published room allotments that have exceeded the payment/reporting deadline without fee submission?\n\nThis will immediately release their rooms as AVAILABLE for waitlisted applicants.')) {
+      return;
+    }
+    var self = this;
+    this.showLoading('Lapsing unreported allotments & reclaiming vacant rooms...');
+    this.callServer('apiLapseUnreportedAllocations', this.token, null)
+      .then(function (res) {
+        self.hideLoading();
+        if (res.lapsedCount > 0) {
+          self.showToast('Reclaimed ' + res.lapsedCount + ' lapsed room(s)! Rooms are now available for waitlist promotion.', 'success', 6000);
+        } else {
+          self.showToast('No published allotments have exceeded the deadline without payment.', 'info');
+        }
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  promoteWaitlistCandidates: function () {
+    if (!confirm('Promote top eligible waitlisted candidates to fill all currently available vacant rooms matching gender & category constraints?')) {
+      return;
+    }
+    var self = this;
+    this.showLoading('Promoting waitlisted candidates to vacant rooms...');
+    this.callServer('apiPromoteWaitlist', this.token, null)
+      .then(function (res) {
+        self.hideLoading();
+        if (res.promotedCount > 0) {
+          self.showToast('Promoted ' + res.promotedCount + ' waitlist candidate(s) to published room allotments!', 'success', 6000);
+        } else {
+          self.showToast(res.message || 'No candidates promoted (either no active waitlist or no vacant gender-compatible rooms).', 'info');
+        }
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  openReleaseSeatsModal: function (category, remainingSeats) {
+    document.getElementById('release-cat-name').textContent = category;
+    document.getElementById('release-cat-input').value = category;
+    document.getElementById('release-avail-seats').textContent = remainingSeats;
+    document.getElementById('release-count-input').value = '1';
+    document.getElementById('release-count-input').max = remainingSeats;
+    document.getElementById('release-reason-input').value = '';
+    this.openModal('modal-release-seats');
+  },
+
+  submitReleaseSeats: function () {
+    var category = document.getElementById('release-cat-input').value;
+    var count = document.getElementById('release-count-input').value;
+    var reason = document.getElementById('release-reason-input').value;
+
+    if (!count || !reason) {
+      this.showToast('Please enter seat count and justification reason.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Releasing reserved seats to general pool...');
+    this.callServer('apiReleaseReservedSeats', this.token, {
+      category: category,
+      seatsToRelease: count,
+      reason: reason
+    })
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-release-seats');
+        self.showToast('Released ' + res.seatsReleased + ' seats from ' + res.category + ' to General pool.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  // ============================================================
+  // RESERVATION QUOTAS & CATEGORIES CRUD
+  // ============================================================
+
+  openAddReservationCategoryModal: function () {
+    document.getElementById('add-cat-name').value = '';
+    document.getElementById('add-cat-pct').value = '5.0';
+    this.openModal('modal-add-res-category');
+  },
+
+  submitAddReservationCategory: function () {
+    var category = (document.getElementById('add-cat-name').value || '').trim();
+    var pct = document.getElementById('add-cat-pct').value;
+
+    if (!category || pct === '') {
+      this.showToast('Please enter category name and percentage.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Adding reservation quota category...');
+    this.callServer('apiAddReservationCategory', this.token, category, pct)
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-add-res-category');
+        self.showToast('Added reservation category ' + res.Category + ' (' + res.Percentage + '%)', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  openEditReservationCategoryModal: function (ruleId, category, percentage, status) {
+    document.getElementById('edit-cat-rule-id').value = ruleId;
+    document.getElementById('edit-cat-name').value = category;
+    document.getElementById('edit-cat-pct').value = percentage;
+    document.getElementById('edit-cat-status').value = status || 'ACTIVE';
+    this.openModal('modal-edit-res-category');
+  },
+
+  submitEditReservationCategory: function () {
+    var ruleId = document.getElementById('edit-cat-rule-id').value;
+    var category = document.getElementById('edit-cat-name').value;
+    var pct = document.getElementById('edit-cat-pct').value;
+    var status = document.getElementById('edit-cat-status').value;
+
+    if (!ruleId || pct === '') {
+      this.showToast('Please specify percentage.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Updating reservation category...');
+    this.callServer('apiUpdateReservationCategory', this.token, ruleId, category, pct, status)
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-edit-res-category');
+        self.showToast('Updated category ' + category + ' successfully.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  deleteReservationCategory: function (ruleId, category) {
+    if (!confirm('Are you sure you want to remove the quota category ' + category + '?\n\nThis will remove its dedicated seat quota constraint.')) {
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Deleting quota category...');
+    this.callServer('apiDeleteReservationCategory', this.token, ruleId)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Category ' + category + ' removed successfully.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  saveAllReservationPercentages: function () {
+    var self = this;
+    var updatedRules = [];
+    var totalPct = 0;
+
+    for (var i = 0; i < this.currentReservationRules.length; i++) {
+      var r = this.currentReservationRules[i];
+      var inputEl = document.getElementById('res-pct-' + r.RuleID);
+      var pct = inputEl ? parseFloat(inputEl.value) : (parseFloat(r.Percentage) || 0);
+      if (isNaN(pct) || pct < 0) pct = 0;
+
+      totalPct += pct;
+      updatedRules.push({
+        RuleID: r.RuleID,
+        Category: r.Category,
+        Percentage: pct,
+        Status: r.Status || 'ACTIVE'
+      });
+    }
+
+    this.showLoading('Saving quota percentages...');
+    this.callServer('apiUpdateReservationRules', this.token, updatedRules)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Reservation percentages saved successfully (Total: ' + totalPct.toFixed(1) + '%).', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  // ============================================================
+  // INSTITUTIONAL PRIORITY HIERARCHY CRUD & REORDERING
+  // ============================================================
+
+  openAddPriorityRuleModal: function () {
+    document.getElementById('add-prio-code').value = '';
+    document.getElementById('add-prio-rank').value = (this.currentPriorityRules.length + 1);
+    document.getElementById('add-prio-name').value = '';
+    document.getElementById('add-prio-desc').value = '';
+    this.openModal('modal-add-priority-tier');
+  },
+
+  submitAddPriorityTier: function () {
+    var code = (document.getElementById('add-prio-code').value || '').trim();
+    var rank = document.getElementById('add-prio-rank').value;
+    var name = (document.getElementById('add-prio-name').value || '').trim();
+    var desc = (document.getElementById('add-prio-desc').value || '').trim();
+
+    if (!code || !rank || !name) {
+      this.showToast('Please enter tier code, rank, and group name.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Adding priority tier...');
+    this.callServer('apiAddPriorityRule', this.token, code, name, desc, rank)
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-add-priority-tier');
+        self.showToast('Added Priority Tier ' + res.PriorityGroup + ' (Rank #' + res.OrderRank + ')', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  openEditPriorityTierModal: function (ruleId, code, name, desc, rank, status) {
+    document.getElementById('edit-prio-rule-id').value = ruleId;
+    document.getElementById('edit-prio-code').value = code;
+    document.getElementById('edit-prio-rank').value = rank;
+    document.getElementById('edit-prio-name').value = name;
+    document.getElementById('edit-prio-desc').value = desc;
+    document.getElementById('edit-prio-status').value = status || 'ACTIVE';
+    this.openModal('modal-edit-priority-tier');
+  },
+
+  submitEditPriorityTier: function () {
+    var ruleId = document.getElementById('edit-prio-rule-id').value;
+    var code = document.getElementById('edit-prio-code').value;
+    var rank = document.getElementById('edit-prio-rank').value;
+    var name = (document.getElementById('edit-prio-name').value || '').trim();
+    var desc = (document.getElementById('edit-prio-desc').value || '').trim();
+    var status = document.getElementById('edit-prio-status').value;
+
+    if (!ruleId || !rank || !name) {
+      this.showToast('Please enter rank and group name.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Updating priority tier...');
+    this.callServer('apiUpdatePriorityRule', this.token, ruleId, code, name, desc, rank, status)
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-edit-priority-tier');
+        self.showToast('Updated Priority Tier ' + code + ' successfully.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  deletePriorityTier: function (ruleId, code) {
+    if (!confirm('Are you sure you want to delete Priority Tier ' + code + '?\n\nApplicants matching this tier will fall back to subsequent tiers.')) {
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Deleting priority tier...');
+    this.callServer('apiDeletePriorityRule', this.token, ruleId)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Priority Tier ' + code + ' deleted.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  movePriorityRuleUp: function (index) {
+    if (index <= 0 || index >= this.currentPriorityRules.length) return;
+    var temp = this.currentPriorityRules[index];
+    this.currentPriorityRules[index] = this.currentPriorityRules[index - 1];
+    this.currentPriorityRules[index - 1] = temp;
+
+    // Re-assign ranks 1..N
+    for (var i = 0; i < this.currentPriorityRules.length; i++) {
+      this.currentPriorityRules[i].OrderRank = (i + 1);
+    }
+    this.renderWardenPriorityRules(this.currentPriorityRules);
+    this.showToast('Priority rank moved. Click "Save Priority Order" to apply.', 'info');
+  },
+
+  movePriorityRuleDown: function (index) {
+    if (index < 0 || index >= this.currentPriorityRules.length - 1) return;
+    var temp = this.currentPriorityRules[index];
+    this.currentPriorityRules[index] = this.currentPriorityRules[index + 1];
+    this.currentPriorityRules[index + 1] = temp;
+
+    // Re-assign ranks 1..N
+    for (var i = 0; i < this.currentPriorityRules.length; i++) {
+      this.currentPriorityRules[i].OrderRank = (i + 1);
+    }
+    this.renderWardenPriorityRules(this.currentPriorityRules);
+    this.showToast('Priority rank moved. Click "Save Priority Order" to apply.', 'info');
+  },
+
+  saveAllPriorityOrder: function () {
+    var self = this;
+    this.showLoading('Saving priority order...');
+    this.callServer('apiUpdatePriorityRules', this.token, this.currentPriorityRules)
+      .then(function (res) {
+        self.hideLoading();
+        self.showToast('Institutional Priority Hierarchy saved successfully! Changes will apply to next allocation run.', 'success', 6000);
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  pendingDocVerifications: {},
+
+  openVerifyDocsModal: function (applicationId) {
+    var app = (this.wardenData.applications || []).filter(function (a) { return a.applicationId === applicationId; })[0];
+    if (!app) return;
+
+    this.pendingDocVerifications = {};
+    var docs = app.documents || [];
+    var self = this;
+
+    var container = document.getElementById('verify-docs-list');
+    var html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">' +
+      '<div><h4 style="margin:0; font-size:15px; color:var(--text-main);">' + app.name + ' (' + app.applicationId + ')</h4>' +
+      '<small style="color:var(--text-muted);">' + docs.length + ' documents uploaded for review</small></div>' +
+      '<div style="display:flex; gap:8px;">' +
+      '<button type="button" class="btn btn-sm btn-outline-success" onclick="App.setAllDocStatuses(\'VERIFIED\')">✓ Approve All</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger" onclick="App.setAllDocStatuses(\'REJECTED\')">✕ Reject All</button>' +
+      '</div></div><hr style="margin:0 0 14px 0; border:0; border-top:1px solid var(--border);">';
+
+    if (docs.length === 0) {
+      html += '<div style="text-align:center; padding:20px; color:var(--text-muted);">No documents uploaded yet by this applicant.</div>';
+    }
+
+    docs.forEach(function (d) {
+      self.pendingDocVerifications[d.DocumentID] = {
+        documentId: d.DocumentID,
+        status: d.VerificationStatus || 'PENDING',
+        remarks: d.Remarks || ''
+      };
+
+      var isVerified = (d.VerificationStatus === 'VERIFIED');
+      var isRejected = (d.VerificationStatus === 'REJECTED');
+
+      html +=
+        '<div id="doc-card-' + d.DocumentID + '" style="padding:14px; border:1px solid var(--border); border-radius:8px; margin-bottom:12px; background:var(--bg-card);">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
+        '<strong style="font-size:14px;">' + d.DocumentType.replace(/_/g, ' ') + '</strong>' +
+        '<span id="doc-badge-' + d.DocumentID + '" class="badge ' + (isVerified ? 'badge-success' : (isRejected ? 'badge-danger' : 'badge-warning')) + '">' + (d.VerificationStatus || 'PENDING') + '</span>' +
+        '</div>' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">' +
+        '<a href="' + d.DriveURL + '" target="_blank" class="btn btn-sm btn-secondary" style="font-size:12px;">📂 Open in Drive</a>' +
+        '<div style="display:flex; gap:8px;">' +
+        '<button type="button" id="btn-approve-' + d.DocumentID + '" class="btn btn-sm ' + (isVerified ? 'btn-success' : 'btn-secondary') + '" onclick="App.setSingleDocStatus(\'' + d.DocumentID + '\', \'VERIFIED\')">Approve</button>' +
+        '<button type="button" id="btn-reject-' + d.DocumentID + '" class="btn btn-sm ' + (isRejected ? 'btn-danger' : 'btn-secondary') + '" onclick="App.setSingleDocStatus(\'' + d.DocumentID + '\', \'REJECTED\')">Reject</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    });
+
+    container.innerHTML = html;
+    this.openModal('modal-verify-docs');
+  },
+
+  setSingleDocStatus: function (docId, status) {
+    if (!this.pendingDocVerifications[docId]) {
+      this.pendingDocVerifications[docId] = { documentId: docId };
+    }
+    this.pendingDocVerifications[docId].status = status;
+
+    // Update UI badge
+    var badge = document.getElementById('doc-badge-' + docId);
+    if (badge) {
+      badge.className = 'badge ' + (status === 'VERIFIED' ? 'badge-success' : (status === 'REJECTED' ? 'badge-danger' : 'badge-warning'));
+      badge.textContent = status;
+    }
+
+    // Update Button styling
+    var btnApprove = document.getElementById('btn-approve-' + docId);
+    var btnReject = document.getElementById('btn-reject-' + docId);
+    if (btnApprove && btnReject) {
+      if (status === 'VERIFIED') {
+        btnApprove.className = 'btn btn-sm btn-success';
+        btnReject.className = 'btn btn-sm btn-secondary';
+      } else if (status === 'REJECTED') {
+        btnApprove.className = 'btn btn-sm btn-secondary';
+        btnReject.className = 'btn btn-sm btn-danger';
+      }
+    }
+  },
+
+  setAllDocStatuses: function (status) {
+    var self = this;
+    for (var docId in this.pendingDocVerifications) {
+      self.setSingleDocStatus(docId, status);
+    }
+  },
+
+  saveAllDocumentVerifications: function () {
+    var verifications = [];
+    for (var docId in this.pendingDocVerifications) {
+      verifications.push(this.pendingDocVerifications[docId]);
+    }
+
+    if (verifications.length === 0) {
+      this.closeModal('modal-verify-docs');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Saving document verification statuses...');
+    this.callServer('apiVerifyDocumentsBatch', this.token, verifications)
+      .then(function () {
+        self.hideLoading();
+        self.closeModal('modal-verify-docs');
+        self.showToast('All document statuses updated successfully.', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  verifyPayment: function (paymentId, status) {
+    var remarks = prompt('Enter payment remarks:') || '';
+    var self = this;
+    this.showLoading('Verifying payment...');
+    this.callServer('apiVerifyPayment', this.token, paymentId, status, remarks)
+      .then(function () {
+        self.hideLoading();
+        self.showToast('Payment marked as ' + status, 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  downloadReportCsv: function (reportType) {
+    var self = this;
+    this.showLoading('Generating CSV report...');
+    this.callServer('apiGetReports', this.token, reportType, null)
+      .then(function (report) {
+        self.hideLoading();
+        var blob = new Blob([report.csv], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'Hostel360_' + reportType + '_' + new Date().toISOString().split('T')[0] + '.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        self.showToast(report.title + ' downloaded.', 'success');
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  // ============================================================
+  // HOSTELS & ROOMS MANAGEMENT
+  // ============================================================
+
+  openAddRoomModal: function (hostelId, hostelName) {
+    document.getElementById('add-room-hostel-id').value = hostelId;
+    document.getElementById('add-room-hostel-name').value = hostelName || hostelId;
+    document.getElementById('add-room-floor').value = '1';
+    document.getElementById('add-room-number').value = '';
+    document.getElementById('add-room-remarks').value = '';
+    this.openModal('modal-add-room');
+  },
+
+  submitAddRoom: function () {
+    var hostelId = document.getElementById('add-room-hostel-id').value;
+    var floorNumber = document.getElementById('add-room-floor').value;
+    var roomNumber = (document.getElementById('add-room-number').value || '').trim();
+    var remarks = (document.getElementById('add-room-remarks').value || '').trim();
+
+    if (!hostelId || !floorNumber || !roomNumber) {
+      this.showToast('Please specify floor and room number.', 'warning');
+      return;
+    }
+
+    var self = this;
+    this.showLoading('Adding single occupancy room...');
+    this.callServer('apiSaveRoom', this.token, {
+      HostelID: hostelId,
+      FloorNumber: floorNumber,
+      RoomNumber: roomNumber,
+      Remarks: remarks || 'Single occupancy room'
+    })
+      .then(function (res) {
+        self.hideLoading();
+        self.closeModal('modal-add-room');
+        self.showToast('Single Room ' + roomNumber + ' created successfully!', 'success');
+        self.loadWardenDashboard();
+      })
+      .catch(function () {
+        self.hideLoading();
+      });
+  },
+
+  openHostelResidentsModal: function (hostelId, hostelName) {
+    var titleEl = document.getElementById('hostel-residents-modal-title');
+    var subEl = document.getElementById('hostel-residents-modal-sub');
+    var countEl = document.getElementById('hostel-residents-count');
+    var tbody = document.getElementById('hostel-residents-tbody');
+    tbody.innerHTML = '';
+
+    if (titleEl) titleEl.textContent = '👥 ' + (hostelName || 'Hostel') + ' Residents';
+    if (subEl) subEl.textContent = 'Allocated students currently residing in ' + (hostelName || 'this residence');
+
+    var allocations = (this.wardenData && this.wardenData.allocations) ? this.wardenData.allocations : [];
+    var residents = allocations.filter(function (al) {
+      return al.hostelId === hostelId && al.status !== 'CANCELLED' && al.status !== 'LAPSED_UNREPORTED';
+    });
+
+    residents.sort(function (a, b) {
+      var flA = parseInt(a.floorNumber, 10) || 0;
+      var flB = parseInt(b.floorNumber, 10) || 0;
+      if (flA !== flB) return flA - flB;
+      return String(a.roomNumber).localeCompare(String(b.roomNumber));
+    });
+
+    if (countEl) countEl.textContent = residents.length + ' Total Occupants';
+
+    if (residents.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">No students currently allocated to this residence.</td></tr>';
+    } else {
+      residents.forEach(function (r) {
+        var isCheckedIn = (r.registrationStatus === 'COMPLETED');
+        var checkInBadge = isCheckedIn ?
+          '<span class="badge badge-success">✓ CHECKED-IN</span>' :
+          '<button class="btn btn-sm btn-outline-success" onclick="App.markPhysicalRegistration(\'' + r.allocationId + '\', \'' + (r.studentName || 'Student').replace(/'/g, "\\'") + '\')">🔑 Check-In / Key</button>';
+
+        var feeBadge = r.hasVerifiedPayment ?
+          '<span class="badge badge-success">✓ VERIFIED</span>' :
+          (r.hasSubmittedPayment ? '<span class="badge badge-warning">⏳ AWAITING VERIFY</span>' : '<span class="badge badge-danger">PENDING FEE</span>');
+
+        var genderText = (String(r.gender).toUpperCase() === 'MALE') ? 'Male' : 'Female';
+
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><strong>Room ' + r.roomNumber + '</strong><br><small style="color:var(--text-muted);">Floor ' + r.floorNumber + '</small></td>' +
+          '<td><strong>' + r.studentName + '</strong></td>' +
+          '<td><code>' + r.studentId + '</code></td>' +
+          '<td>' + genderText + '</td>' +
+          '<td><span class="badge badge-info">' + (r.category || 'GENERAL') + '</span></td>' +
+          '<td>' + (r.priorityGroup || 'N/A') + '</td>' +
+          '<td>' + feeBadge + '</td>' +
+          '<td>' + checkInBadge + '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    this.openModal('modal-hostel-residents');
+  },
+
+  // ============================================================
+  // UI UTILITIES: MODALS, TOASTS, LOADERS
+  // ============================================================
+
+  openModal: function (modalId) {
+    var el = document.getElementById(modalId);
+    if (el) el.style.display = 'flex';
+  },
+
+  closeModal: function (modalId) {
+    var el = document.getElementById(modalId);
+    if (el) el.style.display = 'none';
+  },
+
+  showToast: function (message, type, duration) {
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+
+    var toast = document.createElement('div');
+    toast.className = 'toast ' + (type || 'info');
+    toast.innerHTML = '<span>' + message + '</span>';
+    container.appendChild(toast);
+
+    setTimeout(function () {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(50px)';
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, duration || 4000);
+  },
+
+  // ============================================================
+  // SMRITI ADVISORY INSTITUTIONAL MEMORY CONTROLLER (MODERN LLM)
+  // ============================================================
+
+  getSmritiWelcomeHtml: function () {
+    return '<div class="smriti-msg-row smriti-msg-assistant">' +
+      '<div class="smriti-msg-avatar">' +
+      '<div class="smriti-avatar-gradient">🧠</div>' +
+      '</div>' +
+      '<div class="smriti-msg-bubble">' +
+      '<div class="smriti-msg-author">' +
+      '<span class="smriti-author-name">Smriti</span>' +
+      '<span class="smriti-author-role">Hindsight Memory</span>' +
+      '</div>' +
+      '<div class="smriti-msg-content">' +
+      '<p><strong>Welcome to Smriti.</strong> I am your advisory institutional memory assistant powered by Hindsight agent memory.</p>' +
+      '<div class="smriti-md-gap"></div>' +
+      '<p>I recall past manual override justifications, document rejection patterns, waitlist promotion timelines, and quota release precedents from historical cycles (2024-25 &amp; 2025-26).</p>' +
+      '<div class="smriti-callout-note">' +
+      '<span>💡</span>' +
+      '<span>Click any suggested precedent query below or type your question in the chat box to reflect on historical cases.</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="smriti-msg-actions">' +
+      '<button type="button" class="smriti-copy-btn" onclick="App.copySmritiResponse(this)" title="Copy response">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+      '<span>Copy</span>' +
+      '</button>' +
+      '<span class="smriti-source-tag">Institutional Memory Bank (2024-25, 2025-26)</span>' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+  },
+
+  clearSmritiChat: function () {
+    var history = document.getElementById('smriti-chat-history');
+    if (history) history.innerHTML = this.getSmritiWelcomeHtml();
+    var input = document.getElementById('smriti-chat-input');
+    if (input) {
+      input.value = '';
+      this.autoGrowSmritiInput(input);
+      input.focus();
+    }
+  },
+
+  handleSmritiKey: function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      this.submitSmritiQuestion();
+    }
+  },
+
+  autoGrowSmritiInput: function (el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  },
+
+  copySmritiResponse: function (btn, text) {
+    if (!text && btn) {
+      var parentBubble = btn.closest('.smriti-msg-bubble');
+      if (parentBubble) {
+        var contentEl = parentBubble.querySelector('.smriti-msg-content');
+        if (contentEl) text = contentEl.innerText || contentEl.textContent;
+      }
+    }
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if (btn) {
+      var oldHtml = btn.innerHTML;
+      btn.innerHTML = '<span style="color:var(--success); font-weight:600;">✓ Copied</span>';
+      setTimeout(function () {
+        btn.innerHTML = oldHtml;
+      }, 2000);
+    }
+  },
+
+  askSmritiFromChip: function (question) {
+    var input = document.getElementById('smriti-chat-input');
+    if (input) {
+      input.value = question;
+      this.autoGrowSmritiInput(input);
+    }
+    this.submitSmritiQuestion();
+  },
+
+  submitSmritiQuestion: function () {
+    var input = document.getElementById('smriti-chat-input');
+    var sendBtn = document.getElementById('btn-smriti-send');
+    var sendIcon = document.getElementById('smriti-send-icon');
+    var sendSpinner = document.getElementById('smriti-send-spinner');
+    var sendLabel = document.getElementById('smriti-send-label');
+    var errBanner = document.getElementById('smriti-error-banner');
+    var history = document.getElementById('smriti-chat-history');
+
+    if (!input || !history) return;
+    var question = (input.value || '').trim();
+    if (!question) return;
+
+    if (errBanner) errBanner.style.display = 'none';
+
+    // 1. Append User Message
+    var userMsgHtml = '<div class="smriti-msg-row smriti-msg-user">' +
+      '<div class="smriti-user-bubble">' + App.escapeHtml(question) + '</div>' +
+      '<div class="smriti-msg-avatar">' +
+      '<div class="smriti-avatar-user">👤</div>' +
+      '</div>' +
+      '</div>';
+    history.innerHTML += userMsgHtml;
+    input.value = '';
+    this.autoGrowSmritiInput(input);
+
+    // 2. Append Pending Assistant Bubble
+    var tempMsgId = 'smriti-loading-' + Date.now();
+    var pendingMsgHtml = '<div id="' + tempMsgId + '" class="smriti-msg-row smriti-msg-assistant">' +
+      '<div class="smriti-msg-avatar">' +
+      '<div class="smriti-avatar-gradient smriti-avatar-pulse">🧠</div>' +
+      '</div>' +
+      '<div class="smriti-msg-bubble">' +
+      '<div class="smriti-msg-author">' +
+      '<span class="smriti-author-name">Smriti</span>' +
+      '<span class="smriti-author-role">Reflecting...</span>' +
+      '</div>' +
+      '<div class="smriti-thinking-row">' +
+      '<div class="smriti-thinking-dots">' +
+      '<div class="smriti-dot"></div>' +
+      '<div class="smriti-dot"></div>' +
+      '<div class="smriti-dot"></div>' +
+      '</div>' +
+      '<span class="smriti-thinking-text">Reflecting over institutional memory banks...</span>' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+    history.innerHTML += pendingMsgHtml;
+    history.scrollTop = history.scrollHeight;
+
+    if (sendBtn) sendBtn.disabled = true;
+    if (sendIcon) sendIcon.style.display = 'none';
+    if (sendSpinner) sendSpinner.style.display = 'inline-block';
+    if (sendLabel) sendLabel.textContent = 'Thinking...';
+
+    var self = this;
+    this.callServer('apiSmritiAsk', this.token, question)
+      .then(function (res) {
+        if (sendBtn) sendBtn.disabled = false;
+        if (sendIcon) sendIcon.style.display = 'inline-block';
+        if (sendSpinner) sendSpinner.style.display = 'none';
+        if (sendLabel) sendLabel.textContent = 'Ask Smriti';
+
+        var tempEl = document.getElementById(tempMsgId);
+        var answer = (res && res.answer) ? res.answer : 'No answer returned from institutional memory.';
+        if (tempEl) {
+          tempEl.innerHTML = '<div class="smriti-msg-avatar">' +
+            '<div class="smriti-avatar-gradient">🧠</div>' +
+            '</div>' +
+            '<div class="smriti-msg-bubble">' +
+            '<div class="smriti-msg-author">' +
+            '<span class="smriti-author-name">Smriti</span>' +
+            '<span class="smriti-author-role">Hindsight Memory</span>' +
+            '</div>' +
+            '<div class="smriti-msg-content">' + App.renderMarkdown(answer) + '</div>' +
+            '<div class="smriti-msg-actions">' +
+            '<button type="button" class="smriti-copy-btn" onclick="App.copySmritiResponse(this)" title="Copy response">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+            '<span>Copy</span>' +
+            '</button>' +
+            '<span class="smriti-source-tag">Institutional Memory Bank (2024-25, 2025-26)</span>' +
+            '</div>' +
+            '</div>';
+        }
+        history.scrollTop = history.scrollHeight;
+      })
+      .catch(function () {
+        if (sendBtn) sendBtn.disabled = false;
+        if (sendIcon) sendIcon.style.display = 'inline-block';
+        if (sendSpinner) sendSpinner.style.display = 'none';
+        if (sendLabel) sendLabel.textContent = 'Ask Smriti';
+
+        var tempEl = document.getElementById(tempMsgId);
+        var friendlyErr = 'Smriti is currently operating in offline mode. Please configure Hindsight API credentials via smritiSetConfig() to enable AI-powered institutional recall.';
+        if (tempEl) {
+          tempEl.innerHTML = '<div class="smriti-msg-avatar">' +
+            '<div class="smriti-avatar-gradient">🧠</div>' +
+            '</div>' +
+            '<div class="smriti-msg-bubble">' +
+            '<div class="smriti-msg-author">' +
+            '<span class="smriti-author-name">Smriti</span>' +
+            '<span class="smriti-author-role">System Notice</span>' +
+            '</div>' +
+            '<div class="smriti-msg-content" style="color:var(--text-muted); font-style:italic;">' +
+            App.renderMarkdown(friendlyErr) +
+            '</div>' +
+            '</div>';
+        }
+        history.scrollTop = history.scrollHeight;
+      });
+  },
+
+  loadSmritiPrePublishBriefing: function () {
+    var card = document.getElementById('smriti-prepublish-card');
+    var content = document.getElementById('smriti-briefing-content');
+    if (!card || !content) return;
+
+    card.style.display = 'block';
+    content.innerHTML = '<div style="display:flex; align-items:center; gap:8px;"><span class="spinner" style="width:14px; height:14px; border-width:2px;"></span> Synthesizing historical cycle warnings and waitlist trends...</div>';
+
+    this.callServer('apiSmritiPrePublishBriefing', this.token)
+      .then(function (res) {
+        var briefing = (res && res.briefing) ? res.briefing : 'Smriti advisory memory is offline.';
+        content.innerHTML = App.renderMarkdown(briefing);
+      })
+      .catch(function () {
+        content.innerHTML = '<span style="color:var(--text-muted); font-style:italic;">Smriti briefing unavailable (offline mode). Allocation engine validation remains fully verified.</span>';
+      });
+  },
+
+  dismissSmritiBriefing: function () {
+    var card = document.getElementById('smriti-prepublish-card');
+    if (card) card.style.display = 'none';
+  },
+
+  showLoading: function (msg) {
+    var overlay = document.getElementById('loading-overlay');
+    if (overlay) {
+      overlay.style.display = 'flex';
+      var textEl = document.getElementById('loading-text');
+      if (textEl) textEl.textContent = msg || 'Processing...';
+    }
+  },
+
+  hideLoading: function () {
+    var overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+};
+
+window.onload = function () {
+  App.init();
+};
+</script>
