@@ -1,0 +1,40 @@
+<div id="view-student-login" class="view-container" style="display:none; max-width:440px; margin:40px auto;">
+  <div class="card" style="padding:32px;">
+    <div style="text-align:center; margin-bottom:24px;">
+      <div class="nav-logo-icon" style="margin:0 auto 12px auto; width:48px; height:48px; font-size:22px;">🎓</div>
+      <h2 style="font-size:22px; font-weight:800; color:var(--primary);">Student Portal Login</h2>
+      <p style="font-size:13px; color:var(--text-muted); margin-top:4px;">Access your hostel application, documents, and allotment letter</p>
+    </div>
+
+    <form onsubmit="event.preventDefault(); App.login(document.getElementById('stu-login-email').value, document.getElementById('stu-login-password').value);">
+      <div class="form-group">
+        <label class="form-label" for="stu-login-email">University Student Email</label>
+        <input type="email" id="stu-login-email" class="form-control" placeholder="aarav.sharma2@hostel360.test" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="stu-login-password">Password</label>
+        <input type="password" id="stu-login-password" class="form-control" placeholder="••••••••" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:8px;">Sign In to Student Portal</button>
+    </form>
+
+    <!-- Student Demo Credentials Info Box -->
+    <div style="background:var(--bg-subtle); padding:14px 16px; border-radius:var(--radius-sm); border:1px solid var(--border); margin-top:20px; font-size:13px;">
+      <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+        <span>⚡</span> Demo Student Credentials
+      </div>
+      <div style="color:var(--text-muted); line-height:1.6;">
+        Email: <code style="color:var(--primary); font-weight:600;">aarav.sharma2@hostel360.test</code><br>
+        Password: <code style="color:var(--primary); font-weight:600;">Student@123</code>
+      </div>
+    </div>
+
+    <div style="text-align:center; margin-top:20px; font-size:13px;">
+      <a href="javascript:void(0)" onclick="App.navigate('landing')" style="color:var(--accent); text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+        &larr; Back to Home / Change Role
+      </a>
+    </div>
+  </div>
+</div>
