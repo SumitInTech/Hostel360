@@ -1,0 +1,411 @@
+<div id="view-student-dashboard" class="view-container" style="display:none;">
+
+  <!-- Profile Header Banner -->
+  <div class="card" style="background:linear-gradient(135deg, var(--bg-card), var(--bg-subtle)); border-left:6px solid var(--primary); margin-bottom:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+      <div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <h2 id="stu-display-name" style="font-size:22px; font-weight:800; color:var(--text-main);">Student Profile</h2>
+          <span id="stu-display-category" class="badge badge-info">GENERAL</span>
+        </div>
+        <p style="font-size:13px; color:var(--text-muted); margin-top:2px;">
+          Enrollment: <strong id="stu-display-enrollment">---</strong> • Programme: <span id="stu-display-programme">---</span>
+        </p>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="stu-btn-view-letter" class="btn btn-primary btn-sm" style="display:none;" onclick="App.openAllotmentLetterModal()">📄 View Allotment Letter</button>
+        <button class="btn btn-secondary btn-sm" onclick="App.loadStudentDashboard()">🔄 Refresh Status</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Real-Time Application Timeline (8 Official Stages) -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-title" style="margin-bottom:12px;">Hostel Allotment Lifecycle</div>
+    <div id="student-timeline" class="timeline-container">
+      <div class="timeline-step">
+        <div class="timeline-icon">1</div>
+        <div class="timeline-title">Submitted</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">2</div>
+        <div class="timeline-title">Eligibility</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">3</div>
+        <div class="timeline-title">Doc Verification</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">4</div>
+        <div class="timeline-title">Allocation</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">5</div>
+        <div class="timeline-title">Warden Review</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">6</div>
+        <div class="timeline-title">Published</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">7</div>
+        <div class="timeline-title">Fee Payment</div>
+      </div>
+      <div class="timeline-step">
+        <div class="timeline-icon">8</div>
+        <div class="timeline-title">Registration</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prominent Allocation Status & Letter Card Container (Placed directly between Lifecycle and Tabs) -->
+  <div id="stu-allocation-card-container" style="margin-bottom:24px;"></div>
+
+  <!-- Student Dashboard Navigation Tabs (3 Dedicated Functional Tabs) -->
+  <div class="tabs-nav" style="margin-bottom:20px;">
+    <button id="btn-stu-tab-application" class="tab-btn active" onclick="App.switchStudentTab('application')">📝 Application & Preferences</button>
+    <button id="btn-stu-tab-documents" class="tab-btn" onclick="App.switchStudentTab('documents')">📁 Document Verification</button>
+    <button id="btn-stu-tab-payments" class="tab-btn" onclick="App.switchStudentTab('payments')">💳 Hostel Fee Payment</button>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- TAB 1: APPLICATION PROFILE & PREFERENCES (Default Active) -->
+  <!-- ============================================================ -->
+  <div id="stu-tab-application" class="tab-pane student-tab active">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📝 Hostel Application & Profile</div>
+          <div class="card-subtitle">Provide personal details, address, and single-occupancy hostel preferences</div>
+        </div>
+        <span class="badge badge-primary">Academic Year 2026-27</span>
+      </div>
+
+      <form onsubmit="event.preventDefault(); App.submitStudentApplication();">
+        <h4 style="font-size:14px; color:var(--primary); margin:12px 0 8px 0;">1. Personal & Academic Information</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-name">Full Name *</label>
+            <input type="text" id="app-name" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-enrollment">Enrollment Number *</label>
+            <input type="text" id="app-enrollment" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-dob">Date of Birth</label>
+            <input type="date" id="app-dob" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-gender">Gender *</label>
+            <select id="app-gender" class="form-control" onchange="App.onGenderChange(this.value)" required>
+              <option value="">-- Select Gender --</option>
+              <option value="MALE">Male (Boys Hostels)</option>
+              <option value="FEMALE">Female (Girls Hostels)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-programme">Programme / Course *</label>
+            <input type="text" id="app-programme" class="form-control" placeholder="e.g. B.Tech CSE" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-department">University School / Dept</label>
+            <input type="text" id="app-department" class="form-control" placeholder="e.g. USICT">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-nationality">Nationality</label>
+            <input type="text" id="app-nationality" class="form-control" value="INDIAN">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-joining-date">Joining Date</label>
+            <input type="date" id="app-joining-date" class="form-control">
+          </div>
+        </div>
+
+        <h4 style="font-size:14px; color:var(--primary); margin:20px 0 8px 0;">2. Category & NCR Residency Criteria</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-category">Reservation Category *</label>
+            <select id="app-category" class="form-control" required>
+              <option value="GENERAL">General</option>
+              <option value="OBC">OBC (Other Backward Classes)</option>
+              <option value="SC">SC (Scheduled Caste)</option>
+              <option value="ST">ST (Scheduled Tribe)</option>
+              <option value="EWS">EWS (Economically Weaker Section)</option>
+              <option value="PWD">PwD (Persons with Disabilities)</option>
+              <option value="FOREIGN">Foreign / International Student</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-region-type">Admission Quota *</label>
+            <select id="app-region-type" class="form-control" required>
+              <option value="OUTSIDE_DELHI">Outside Delhi (OD)</option>
+              <option value="DELHI">Delhi Region</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-subtle); padding:12px; border-radius:6px; border:1px solid var(--border); margin-bottom:16px;">
+          <div style="margin-bottom:8px;">
+            <label><input type="checkbox" id="app-ncr-resident"> Permanent residence is within Delhi-NCR boundaries</label>
+          </div>
+          <div style="margin-bottom:8px;">
+            <label><input type="checkbox" id="app-parent-posted-outside"> Parents / Guardians are posted or working outside Delhi-NCR</label>
+          </div>
+          <div>
+            <label><input type="checkbox" id="app-pwd"> Specially-abled student (PwD category)</label>
+          </div>
+        </div>
+
+        <h4 style="font-size:14px; color:var(--primary); margin:20px 0 8px 0;">3. Contact & Permanent Address</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-mobile">Student Mobile Number</label>
+            <input type="tel" id="app-mobile" class="form-control" placeholder="9876543210">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-emergency-contact">Emergency Contact Number</label>
+            <input type="tel" id="app-emergency-contact" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-parent-name">Parent / Guardian Name</label>
+            <input type="text" id="app-parent-name" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-parent-mobile">Parent Contact Number</label>
+            <input type="tel" id="app-parent-mobile" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="app-address">Permanent Address *</label>
+          <input type="text" id="app-address" class="form-control" placeholder="House/Flat No, Street Name, Area" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-city">City *</label>
+            <input type="text" id="app-city" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-state">State *</label>
+            <input type="text" id="app-state" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-pincode">Pincode *</label>
+            <input type="text" id="app-pincode" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-guardian-name">Local Guardian Name (if any)</label>
+            <input type="text" id="app-guardian-name" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-guardian-contact">Local Guardian Contact</label>
+            <input type="tel" id="app-guardian-contact" class="form-control">
+          </div>
+        </div>
+
+        <h4 style="font-size:14px; color:var(--primary); margin:20px 0 8px 0;">4. Hostel Preferences (Single-Occupancy)</h4>
+        <p class="form-hint" style="margin-bottom:10px;">Select your preferred hostels. All rooms are single occupancy. If chosen preferences are full, you will be placed on the Waitlist unless you explicitly opt for "No Preference".</p>
+        
+        <div style="display:flex; justify-content:center; margin:14px 0 16px 0;">
+          <div style="background:var(--bg-subtle); padding:8px 18px; border-radius:20px; border:1px solid var(--border); display:inline-flex; align-items:center;">
+            <label style="font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px; margin:0; font-size:13px;">
+              <input type="checkbox" id="app-no-pref" onchange="App.toggleNoPreference(this.checked)">
+              <span>I have No Preference</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="app-pref-selectors" class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="app-pref-1">First Preferred Hostel</label>
+            <select id="app-pref-1" class="form-control"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="app-pref-2">Second Preferred Hostel</label>
+            <select id="app-pref-2" class="form-control"></select>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%; margin-top:16px;">
+          💾 Save & Submit Application
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- TAB 2: DOCUMENT VERIFICATION -->
+  <!-- ============================================================ -->
+  <div id="stu-tab-documents" class="tab-pane student-tab">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📁 Document Verification</div>
+          <div class="card-subtitle">Upload required mandatory certificates for Warden audit</div>
+        </div>
+        <span class="badge badge-info">Google Drive Secure Storage</span>
+      </div>
+      <p class="form-hint" style="margin-bottom:16px;">Upload required documents in PDF or Image format (max 10MB). Documents will be audited by the Warden for institutional eligibility.</p>
+
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Document Type</th>
+              <th>Status</th>
+              <th>Remarks</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="stu-docs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- TAB 3: HOSTEL FEE PAYMENT -->
+  <!-- ============================================================ -->
+  <div id="stu-tab-payments" class="tab-pane student-tab">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">💳 Hostel Fee Payment & Receipts</div>
+          <div class="card-subtitle">Record and track your annual hostel accommodation fee payment</div>
+        </div>
+        <span id="stu-fee-amount-display" class="badge badge-success" style="font-size:13px;">INR 35,000</span>
+      </div>
+
+      <!-- Locked Banner when room is NOT yet allocated -->
+      <div id="stu-payment-locked-banner" style="background:var(--bg-subtle); padding:28px 20px; border-radius:8px; border:1px dashed var(--border); text-align:center; margin-bottom:20px;">
+        <div style="font-size:36px; margin-bottom:8px;">🔒</div>
+        <strong style="font-size:15px; color:var(--text-main);">Fee Payment Locked</strong>
+        <p style="font-size:13px; color:var(--text-muted); margin-top:6px; max-width:500px; margin-left:auto; margin-right:auto; line-height:1.5;">
+          Hostel fee payment and transaction reconciliation will unlock automatically once a single-occupancy room is officially allotted to you by the Warden.
+        </p>
+      </div>
+
+      <!-- Active Payment Form (Visible only when room is allocated) -->
+      <div id="stu-payment-active-container" style="display:none;">
+        <div style="background:rgba(16,185,129,0.1); border:1px solid var(--success); color:var(--text-main); padding:14px 16px; border-radius:6px; margin-bottom:16px; font-size:13px;">
+          🎉 <strong>Room Allotted!</strong> Please prepare the Demand Draft or make payment for the annual hostel fee (<strong>INR 35,000</strong>) and record your instrument details below.
+        </div>
+
+        <form onsubmit="event.preventDefault(); App.submitPaymentRecord();" style="background:var(--bg-subtle); padding:20px; border-radius:8px; border:1px solid var(--border); margin-bottom:20px;">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="pay-amount">Amount Payable (INR) *</label>
+              <input type="number" id="pay-amount" class="form-control" value="35000" readonly style="background:var(--bg-card); cursor:not-allowed;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="pay-mode">Payment Instrument / Mode *</label>
+              <select id="pay-mode" class="form-control" onchange="App.onPaymentModeChange(this.value)" required>
+                <option value="DEMAND_DRAFT" selected>Demand Draft (DD) - Recommended</option>
+                <option value="BANK_TRANSFER">Bank Transfer (NEFT / RTGS)</option>
+                <option value="OFFLINE_CHALLAN">Bank Challan</option>
+                <option value="CASH">Cash Deposit</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Demand Draft Instrument Fields Container -->
+          <div id="pay-dd-container">
+            <div style="background:rgba(59,130,246,0.1); border:1px solid var(--primary); padding:12px 14px; border-radius:6px; margin-bottom:14px; font-size:12.5px; color:var(--text-main);">
+              🏦 <strong>Demand Draft Guidelines:</strong> Please prepare a DD drawn in favor of <strong>"Registrar, GGSIP University"</strong> payable at <strong>Delhi</strong>. Hand over the physical DD at the Hostel Warden Office during room key handover.
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="pay-dd-number">Demand Draft Number (6 digits) *</label>
+                <input type="text" id="pay-dd-number" class="form-control" placeholder="e.g. 542891">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="pay-dd-bank">Issuing Bank Name *</label>
+                <input type="text" id="pay-dd-bank" class="form-control" placeholder="e.g. State Bank of India">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="pay-dd-branch">Issuing Branch *</label>
+                <input type="text" id="pay-dd-branch" class="form-control" placeholder="e.g. Sector 16C, Dwarka, New Delhi">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="pay-dd-payee">Drawn In Favor Of</label>
+                <input type="text" id="pay-dd-payee" class="form-control" value="Registrar, GGSIP University" readonly style="background:var(--bg-card); cursor:not-allowed;">
+              </div>
+            </div>
+          </div>
+
+          <!-- Generic Reference Container (for NEFT/RTGS/Challan) -->
+          <div id="pay-generic-container" style="display:none;">
+            <div class="form-group">
+              <label class="form-label" for="pay-ref">Transaction Reference / UTR / Challan No *</label>
+              <input type="text" id="pay-ref" class="form-control" placeholder="e.g. UTR123456789">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pay-date">Instrument / Payment Date *</label>
+            <input type="date" id="pay-date" class="form-control" required>
+          </div>
+
+          <button type="submit" class="btn btn-success btn-lg" style="width:100%; margin-top:10px;">
+            📄 Record Demand Draft / Payment Details
+          </button>
+        </form>
+      </div>
+
+      <h4 style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:10px;">Recorded Payment Receipts</h4>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Reference</th>
+              <th>Amount</th>
+              <th>Mode</th>
+              <th>Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="stu-payments-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Digital Allotment Letter Modal -->
+<div id="modal-allotment-letter" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:750px; background:var(--bg-card);">
+    <div class="modal-header" style="background:#1e3a8a; color:#ffffff; border-radius:var(--radius-lg) var(--radius-lg) 0 0;">
+      <h3 style="font-size:18px; font-weight:700; color:#ffffff;">Official Hostel Allotment Letter</h3>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2); color:#ffffff;" onclick="App.closeModal('modal-allotment-letter')">✕</button>
+    </div>
+    <div class="modal-body" id="allotment-letter-body" style="padding:28px; line-height:1.6; color:var(--text-main);">
+      <!-- Letter content rendered dynamically -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal('modal-allotment-letter')">Close</button>
+      <button class="btn btn-primary" onclick="App.printAllotmentLetter()">🖨️ Print / Save as PDF</button>
+    </div>
+  </div>
+</div>
