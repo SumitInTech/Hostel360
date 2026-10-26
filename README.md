@@ -8,7 +8,7 @@
 [![Performance](https://img.shields.io/badge/Allocation%20Speed-Sub--1.5s%20(120%20Applicants)-ff69b4)]()
 
 ---
-
+ppt view link : https://canva.link/mw53868zqk2ktx9
 ### 🌐 Production Deployment
 > 🚀 **Google Workspace Deployment:**  
 > Designed to deploy as a Google Apps Script Web App on V8 runtime with Google Sheets relational storage. See [Deployment Guide](#-getting-started--deployment) to deploy in under 3 minutes with zero infrastructure costs.
