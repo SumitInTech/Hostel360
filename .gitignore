@@ -47,7 +47,7 @@ yarn-error.log*
 
 # Excluded from GitHub as requested
 docs/
-Presentation/
+
 .github/
 CONTRIBUTING.md
 SECURITY.md
